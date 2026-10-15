@@ -53,6 +53,7 @@ export type FocusSession = {
   pausedAt?: Timestamp
   endedAt?: Timestamp
   plannedDurationSeconds: number
+  dailyTargetMinutes?: number
   actualDurationSeconds: number
   totalPausedSeconds: number
   status: SessionStatus
@@ -115,5 +116,5 @@ export type NewSubgoal = Pick<Subgoal, 'dailyGoalId' | 'title' | 'order'>
 
 export type NewFocusSession = Pick<
   FocusSession,
-  'dailyGoalId' | 'subgoalId' | 'plannedDurationSeconds'
+  'dailyGoalId' | 'subgoalId' | 'plannedDurationSeconds' | 'dailyTargetMinutes'
 >

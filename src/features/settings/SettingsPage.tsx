@@ -1,7 +1,9 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useState, type FormEvent } from 'react'
+import { Download, Trash2, Upload } from 'lucide-react'
+import { useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
+import { clearDatabase, exportDatabase, importDatabase } from '../../db/backupRepository'
 import { getSettings, updateSettings } from '../../db/repositories/settingsRepository'
 import type { UserSettings } from '../../domain/models'
 
@@ -21,7 +23,7 @@ function SettingsPage() {
         </p>
       </div>
 
-      {storedSettings ? <SettingsForm settings={storedSettings} /> : <Card><p className="text-sm text-slate-400">Loading settings...</p></Card>}
+      {storedSettings ? <SettingsForm key={`${storedSettings.focusDurationSeconds}-${storedSettings.breakDurationSeconds}-${storedSettings.dailyFocusTargetMinutes}`} settings={storedSettings} /> : <Card><p className="text-sm text-slate-400">Loading settings...</p></Card>}
     </section>
   )
 }
@@ -31,6 +33,8 @@ function SettingsForm({ settings }: { settings: UserSettings }) {
   const [breakMinutes, setBreakMinutes] = useState(String(settings.breakDurationSeconds / 60))
   const [dailyTargetMinutes, setDailyTargetMinutes] = useState(String(settings.dailyFocusTargetMinutes))
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [backupState, setBackupState] = useState('')
+  const importInputRef = useRef<HTMLInputElement>(null)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
@@ -46,6 +50,42 @@ function SettingsForm({ settings }: { settings: UserSettings }) {
     } catch {
       setSaveState('error')
     }
+  }
+
+  async function handleExport(): Promise<void> {
+    try {
+      const backup = await exportDatabase()
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `pomo-focus-backup-${new Date().toISOString().slice(0, 10)}.json`
+      link.click()
+      URL.revokeObjectURL(url)
+      setBackupState('Backup downloaded.')
+    } catch {
+      setBackupState('Could not export your data.')
+    }
+  }
+
+  async function handleImport(event: ChangeEvent<HTMLInputElement>): Promise<void> {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    try {
+      await importDatabase(JSON.parse(await file.text()))
+      setBackupState('Backup restored.')
+    } catch (caughtError) {
+      setBackupState(caughtError instanceof Error ? caughtError.message : 'Could not restore this backup.')
+    }
+  }
+
+  async function handleClear(): Promise<void> {
+    if (!window.confirm('Clear all local Pomo Focus data? This cannot be undone without a backup.')) return
+
+    await clearDatabase()
+    setBackupState('Local data cleared.')
   }
 
   return (
@@ -75,6 +115,18 @@ function SettingsForm({ settings }: { settings: UserSettings }) {
           <Button type="submit" disabled={saveState === 'saving'}>{saveState === 'saving' ? 'Saving...' : 'Save settings'}</Button>
         </div>
       </form>
+
+      <div className="mt-8 border-t border-slate-800 pt-6">
+        <h2 className="text-base font-semibold text-white">Local data</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-400">Your goals, sessions, reviews, and settings stay in this browser. Export a backup before clearing browser data.</p>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <Button type="button" variant="secondary" onClick={() => void handleExport}><Download size={15} className="mr-2" /> Export backup</Button>
+          <Button type="button" variant="ghost" onClick={() => importInputRef.current?.click()}><Upload size={15} className="mr-2" /> Import backup</Button>
+          <Button type="button" variant="ghost" className="text-rose-300 hover:text-rose-200" onClick={() => void handleClear}><Trash2 size={15} className="mr-2" /> Clear local data</Button>
+          <input ref={importInputRef} className="hidden" type="file" accept="application/json" onChange={(event) => void handleImport(event)} />
+        </div>
+        {backupState && <p className="mt-3 text-xs text-slate-400" role="status">{backupState}</p>}
+      </div>
     </Card>
   )
 }

@@ -98,8 +98,27 @@ export async function completeFocusSession(
 }
 
 export async function cancelFocusSession(id: EntityId): Promise<void> {
+  const session = await db.focusSessions.get(id)
+
+  if (!session) {
+    throw new Error('This focus session does not exist.')
+  }
+
+  const referenceTime = session.status === 'paused' && session.pausedAt
+    ? new Date(session.pausedAt).getTime()
+    : Date.now()
+  const remainingSeconds = Math.max(
+    0,
+    Math.ceil((new Date(session.plannedEndAt).getTime() - referenceTime) / 1000),
+  )
+  const actualDurationSeconds = Math.max(
+    0,
+    session.plannedDurationSeconds - remainingSeconds,
+  )
+
   await db.focusSessions.update(id, {
     status: 'cancelled',
     endedAt: new Date().toISOString(),
+    actualDurationSeconds,
   })
 }

@@ -13,7 +13,7 @@ function AppShell({ children, activePage, onNavigate }: AppShellProps) {
   return (
     <div className="app-shell min-h-screen text-slate-100">
       <header className="app-header">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-5 lg:px-8">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-4 lg:px-8">
           <div>
             <div className="flex items-center gap-3">
               <span className="brand-mark" aria-hidden="true" />
@@ -24,27 +24,23 @@ function AppShell({ children, activePage, onNavigate }: AppShellProps) {
             <p className="mt-1 pl-9 text-xs tracking-wide text-slate-500">Focus with intention</p>
           </div>
 
-          <div className="flex items-center gap-3 text-sm text-slate-400">
-            <nav className="flex items-center gap-1 rounded-xl border border-slate-800 bg-slate-950/30 p-1" aria-label="Main navigation">
+          <div className="flex items-center text-sm text-slate-400">
+            <nav className="flex items-center gap-1" aria-label="Main navigation">
               <NavButton label="Today" active={activePage === 'today'} icon={<LayoutDashboard size={15} />} onClick={() => onNavigate('today')}>
                 Today
               </NavButton>
-              <NavButton label="Weekly review" active={activePage === 'review'} icon={<BarChart3 size={15} />} onClick={() => onNavigate('review')}>
-                Weekly review
+              <NavButton label="Review" active={activePage === 'review'} icon={<BarChart3 size={15} />} onClick={() => onNavigate('review')}>
+                Review
               </NavButton>
               <NavButton label="Settings" active={activePage === 'settings'} icon={<Settings size={15} />} onClick={() => onNavigate('settings')}>
                 Settings
               </NavButton>
             </nav>
-            <span className="hidden sm:inline">Private workspace</span>
-            <div className="avatar flex h-9 w-9 items-center justify-center rounded-full font-semibold text-emerald-200">
-              A
-            </div>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-5 py-8 lg:px-8 lg:py-10">
+      <main className="mx-auto max-w-5xl px-5 py-8 lg:px-8 lg:py-10">
         {children}
       </main>
     </div>

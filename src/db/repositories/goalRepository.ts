@@ -48,7 +48,14 @@ export async function updateMonthlyMission(
 export async function createDailyGoal(input: NewDailyGoal): Promise<DailyGoal> {
   const goal = buildDailyGoal(input)
 
-  await db.dailyGoals.add(goal)
+  await db.transaction('rw', db.dailyGoals, async () => {
+    const existingGoal = await db.dailyGoals.where('date').equals(input.date).first()
+    if (existingGoal) {
+      throw new Error(`A daily goal already exists for ${input.date}.`)
+    }
+
+    await db.dailyGoals.add(goal)
+  })
   return goal
 }
 
@@ -70,6 +77,11 @@ export async function createDailyGoalWithSubgoals(
   }))
 
   await db.transaction('rw', db.dailyGoals, db.subgoals, async () => {
+    const existingGoal = await db.dailyGoals.where('date').equals(input.date).first()
+    if (existingGoal) {
+      throw new Error(`A daily goal already exists for ${input.date}.`)
+    }
+
     await db.dailyGoals.add(goal)
     await db.subgoals.bulkAdd(subgoals)
   })
@@ -198,6 +210,11 @@ export async function carryGoalForward(
     throw new Error('Cannot carry forward a goal that does not exist.')
   }
 
+  if (originalGoal.status === 'completed' || originalGoal.status === 'cancelled' || originalGoal.status === 'carried_over') {
+    throw new Error('Only an unfinished daily goal can be carried forward.')
+  }
+
+  const originalSubgoals = await listSubgoals(originalGoal.id)
   const carriedGoal: DailyGoal = {
     ...originalGoal,
     id: createId(),
@@ -209,10 +226,25 @@ export async function carryGoalForward(
     createdAt: new Date().toISOString(),
     completedAt: undefined,
   }
+  const carriedSubgoals = originalSubgoals.map((subgoal) => ({
+    ...subgoal,
+    id: createId(),
+    dailyGoalId: carriedGoal.id,
+    createdAt: new Date().toISOString(),
+    completedAt: subgoal.status === 'completed' ? subgoal.completedAt : undefined,
+  }))
 
-  await db.transaction('rw', db.dailyGoals, async () => {
+  await db.transaction('rw', db.dailyGoals, db.subgoals, async () => {
+    const existingGoal = await db.dailyGoals.where('date').equals(newDate).first()
+    if (existingGoal) {
+      throw new Error(`A daily goal already exists for ${newDate}.`)
+    }
+
     await db.dailyGoals.update(originalGoal.id, { status: 'carried_over' })
     await db.dailyGoals.add(carriedGoal)
+    if (carriedSubgoals.length > 0) {
+      await db.subgoals.bulkAdd(carriedSubgoals)
+    }
   })
 
   return carriedGoal

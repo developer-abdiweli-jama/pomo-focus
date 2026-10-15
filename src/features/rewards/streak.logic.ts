@@ -23,19 +23,24 @@ export function calculateCurrentStreak(
 }
 
 function getQualifiedDates(sessions: FocusSession[], dailyTargetMinutes: number): Set<string> {
-  const focusSecondsByDate = new Map<string, number>()
+  const focusByDate = new Map<string, { seconds: number; targetMinutes: number; latestStartedAt: string }>()
 
   for (const session of sessions) {
-    if (session.status !== 'completed') continue
+    if (session.status !== 'completed' && session.status !== 'cancelled') continue
 
     const dateKey = toDateKey(new Date(session.startedAt))
-    focusSecondsByDate.set(dateKey, (focusSecondsByDate.get(dateKey) ?? 0) + session.actualDurationSeconds)
+    const current = focusByDate.get(dateKey)
+    const targetMinutes = session.dailyTargetMinutes ?? dailyTargetMinutes
+    focusByDate.set(dateKey, {
+      seconds: (current?.seconds ?? 0) + session.actualDurationSeconds,
+      targetMinutes: current && current.latestStartedAt > session.startedAt ? current.targetMinutes : targetMinutes,
+      latestStartedAt: current && current.latestStartedAt > session.startedAt ? current.latestStartedAt : session.startedAt,
+    })
   }
 
-  const targetSeconds = dailyTargetMinutes * 60
   return new Set(
-    [...focusSecondsByDate.entries()]
-      .filter(([, focusSeconds]) => focusSeconds >= targetSeconds)
+    [...focusByDate.entries()]
+      .filter(([, focus]) => focus.seconds >= focus.targetMinutes * 60)
       .map(([dateKey]) => dateKey),
   )
 }

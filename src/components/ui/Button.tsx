@@ -8,10 +8,10 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20 hover:bg-emerald-400',
+    'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20 hover:bg-emerald-400 focus-visible:outline-2 focus-visible:outline-emerald-300 focus-visible:outline-offset-2',
   secondary:
-    'border border-slate-700 bg-slate-800 text-slate-100 hover:border-slate-500 hover:bg-slate-700',
-  ghost: 'text-slate-400 hover:bg-slate-800 hover:text-slate-100',
+    'border border-slate-700 bg-slate-800/70 text-slate-100 hover:border-slate-500 hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-slate-400 focus-visible:outline-offset-2',
+  ghost: 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-100 focus-visible:outline-2 focus-visible:outline-slate-400 focus-visible:outline-offset-2',
 }
 
 function Button({ className = '', variant = 'primary', ...props }: ButtonProps) {

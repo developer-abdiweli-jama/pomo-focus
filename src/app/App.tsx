@@ -1,7 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import {
   ArrowRight,
-  CheckCircle2,
   CheckCircle,
   Clock3,
   Link2,
@@ -22,6 +21,7 @@ import { db } from '../db/database'
 import {
   syncDailyGoalStatus,
   addSubgoal,
+  carryGoalForward,
   linkGoalToMission,
   unlinkGoalFromMission,
   toggleSubgoal,
@@ -29,7 +29,7 @@ import {
 } from '../db/repositories/goalRepository'
 import { defaultSettings, getSettings } from '../db/repositories/settingsRepository'
 import type { DailyGoal, FocusSession, MonthlyMission, Subgoal } from '../domain/models'
-import { countInclusiveDays, formatLongDate, todayDateKey, toDateKey } from '../lib/dates'
+import { countInclusiveDays, dateKeyWithOffset, formatLongDate, todayDateKey, toDateKey } from '../lib/dates'
 
 const goalStatusLabels = {
   planned: 'Not started',
@@ -41,6 +41,7 @@ const goalStatusLabels = {
 
 function App() {
   const today = todayDateKey()
+  const tomorrow = dateKeyWithOffset(1)
   const [activePage, setActivePage] = useState<AppPage>('today')
   const [dialogMode, setDialogMode] = useState<GoalDialogMode | null>(null)
   const [missionToEdit, setMissionToEdit] = useState<MonthlyMission | undefined>()
@@ -50,6 +51,7 @@ function App() {
   const [isAddingSubgoal, setIsAddingSubgoal] = useState(false)
   const [newSubgoalTitle, setNewSubgoalTitle] = useState('')
   const [subgoalError, setSubgoalError] = useState('')
+  const [carryError, setCarryError] = useState('')
   const settings = useLiveQuery(getSettings, [])
   const effectiveSettings = settings ?? defaultSettings
   const activeMission = useLiveQuery(
@@ -59,6 +61,10 @@ function App() {
   const todayGoal = useLiveQuery(
     () => db.dailyGoals.where('date').equals(today).first(),
     [today],
+  )
+  const tomorrowGoal = useLiveQuery(
+    () => db.dailyGoals.where('date').equals(tomorrow).first(),
+    [tomorrow],
   )
   const subgoals = useLiveQuery<Subgoal[]>(
     () => todayGoal
@@ -78,8 +84,8 @@ function App() {
     )),
     [today],
   )
-  const completedSessionsForStreak = useLiveQuery(
-    () => db.focusSessions.where('status').equals('completed').toArray(),
+  const sessionsForStreak = useLiveQuery(
+    () => db.focusSessions.where('status').anyOf('completed', 'cancelled').toArray(),
     [],
   )
   const activeSession = useLiveQuery<FocusSession | undefined>(
@@ -105,9 +111,11 @@ function App() {
   }, [subgoals, todayGoal])
 
   const completedSubgoals = subgoals?.filter((subgoal) => subgoal.status === 'completed').length ?? 0
-  const completedSessions = todaySessions?.filter((session) => session.status === 'completed') ?? []
+  const focusSessionsWithTime = todaySessions?.filter((session) =>
+    (session.status === 'completed' || session.status === 'cancelled') && session.actualDurationSeconds > 0,
+  ) ?? []
   const focusMinutes = Math.round(
-    completedSessions.reduce((total, session) => total + session.actualDurationSeconds, 0) / 60,
+    focusSessionsWithTime.reduce((total, session) => total + session.actualDurationSeconds, 0) / 60,
   )
   const missionGoalsInRange = activeMission && missionGoals
     ? missionGoals.filter((goal) => goal.date >= activeMission.startDate && goal.date <= activeMission.targetDate)
@@ -124,7 +132,7 @@ function App() {
     ? Math.round((completedMissionDays / missionDayCount) * 100)
     : 0
   const currentStreak = calculateCurrentStreak(
-    completedSessionsForStreak ?? [],
+    sessionsForStreak ?? [],
     effectiveSettings.dailyFocusTargetMinutes,
     today,
   )
@@ -173,6 +181,17 @@ function App() {
     }
   }
 
+  async function handleCarryGoalForward(): Promise<void> {
+    if (!todayGoal) return
+
+    try {
+      setCarryError('')
+      await carryGoalForward(todayGoal.id, tomorrow)
+    } catch (caughtError) {
+      setCarryError(caughtError instanceof Error ? caughtError.message : 'Unable to carry this goal forward.')
+    }
+  }
+
   function closeGoalDialog(): void {
     setDialogMode(null)
     setMissionToEdit(undefined)
@@ -182,7 +201,7 @@ function App() {
     <AppShell activePage={activePage} onNavigate={setActivePage}>
       {activePage === 'today' ? (
         <>
-      <section className="mb-9 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+      <section className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
         <div>
           <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300/80">
             {formatLongDate()}
@@ -196,15 +215,15 @@ function App() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3 rounded-xl border border-amber-500/20 bg-amber-500/[0.07] px-4 py-3 text-sm text-amber-200">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-400/10 text-lg">{currentStreak}</span>
+        <div className="flex items-center gap-3 text-sm text-amber-200">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-400/20 bg-amber-400/10 text-lg">{currentStreak}</span>
           <span><strong className="font-semibold text-amber-100">day streak</strong><span className="ml-1 text-amber-200/60">at target</span></span>
         </div>
       </section>
 
       <section className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
-        <Card className="border-emerald-400/20 bg-linear-to-br from-emerald-500/12 via-slate-900/90 to-slate-900">
-          <div className="mb-8 flex items-start justify-between gap-4">
+        <Card variant="primary">
+          <div className="mb-7 flex items-start justify-between gap-4">
             <div>
               <div className="mb-3 flex items-center gap-2 text-sm font-medium text-emerald-400">
                 <Target size={17} />
@@ -225,7 +244,7 @@ function App() {
           </div>
 
           {todayGoal ? (
-            <div className="mb-6 rounded-xl border border-slate-700/80 bg-slate-950/40 p-4">
+            <div className="mb-6 rounded-xl border border-slate-800/80 bg-slate-950/30 p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">Subgoals</p>
                 <Button
@@ -318,13 +337,17 @@ function App() {
 
           <div className="flex flex-wrap gap-3">
             {!todayGoal && <Button onClick={() => setDialogMode('daily')}>Create today&apos;s goal</Button>}
-            <Button disabled={!todayGoal} variant="secondary" onClick={() => setIsFocusTimerOpen(true)}>
+            <Button disabled={!todayGoal} onClick={() => setIsFocusTimerOpen(true)}>
               {activeSession ? 'Open focus session' : 'Start focus session'}
             </Button>
+            {todayGoal && todayGoal.status !== 'completed' && todayGoal.status !== 'cancelled' && todayGoal.status !== 'carried_over' && !tomorrowGoal && (
+              <Button variant="ghost" onClick={() => void handleCarryGoalForward()}>Carry to tomorrow</Button>
+            )}
           </div>
+          {carryError && <p className="mt-3 text-xs text-rose-200" role="alert">{carryError}</p>}
         </Card>
 
-        <Card>
+        <Card variant="quiet">
           <div className="mb-5 flex items-center gap-2 text-sm font-medium text-slate-300">
             <Clock3 size={17} className="text-sky-400" />
             <span>Focus summary</span>
@@ -332,15 +355,15 @@ function App() {
 
           <div className="grid grid-cols-2 gap-3">
             <SummaryItem label="Focus time" value={`${focusMinutes}m`} />
-            <SummaryItem label="Sessions" value={`${completedSessions.length}`} />
+            <SummaryItem label="Sessions with time" value={`${focusSessionsWithTime.length}`} />
             <SummaryItem label="Distractions" value={`${todayDistractions?.length ?? 0}`} />
             <SummaryItem label="Daily target" value={`${effectiveSettings.dailyFocusTargetMinutes}m`} />
           </div>
         </Card>
       </section>
 
-      <section className="mt-5 grid gap-5 lg:grid-cols-[1fr_1.4fr]">
-        <Card>
+      <section className="mt-5">
+        <Card variant="quiet">
           <div className="mb-5 flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-slate-300">Monthly mission</p>
@@ -401,28 +424,6 @@ function App() {
               </Button>
             </div>
           )}
-        </Card>
-
-        <Card>
-          <div className="mb-5 flex items-center gap-2">
-            <CheckCircle2 size={17} className="text-violet-400" />
-            <div>
-              <p className="text-sm font-medium text-slate-300">{todayGoal ? 'Today\'s progress' : 'Suggested first subgoals'}</p>
-              <p className="mt-1 text-xs text-slate-500">{todayGoal ? 'Small steps add up to meaningful work.' : 'Create a goal to turn these into real steps.'}</p>
-            </div>
-          </div>
-
-          <ul className="space-y-3">
-            {(todayGoal ? subgoals : undefined)?.map((subgoal) => (
-              <li key={subgoal.id} className="flex items-center gap-3 rounded-lg px-2 py-1 text-sm text-slate-400">
-                {subgoal.status === 'completed'
-                  ? <CheckCircle size={17} className="text-emerald-400" />
-                  : <span className="h-5 w-5 shrink-0 rounded-full border border-slate-700 bg-slate-900/60" />}
-                <span className={subgoal.status === 'completed' ? 'text-slate-500 line-through' : ''}>{subgoal.title}</span>
-              </li>
-            ))}
-            {!todayGoal && <li className="rounded-lg border border-dashed border-slate-700 px-3 py-3 text-sm text-slate-500">No daily plan yet. Create one when you are ready.</li>}
-          </ul>
         </Card>
       </section>
 

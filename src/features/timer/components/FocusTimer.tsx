@@ -65,6 +65,7 @@ function FocusTimer({
       dailyGoalId: goal.id,
       subgoalId: subgoals.find((subgoal) => subgoal.status === 'planned')?.id,
       plannedDurationSeconds: settings.focusDurationSeconds,
+      dailyTargetMinutes: settings.dailyFocusTargetMinutes,
     }).then((createdSession) => {
       setSession(createdSession)
       setRemainingSeconds(getSessionRemaining(createdSession))
@@ -73,7 +74,7 @@ function FocusTimer({
       setError('The focus session could not be started.')
       setTimerState('error')
     })
-  }, [goal.id, settings.focusDurationSeconds, subgoals])
+  }, [goal.id, settings.dailyFocusTargetMinutes, settings.focusDurationSeconds, subgoals])
 
   useEffect(() => {
     if (timerState !== 'running' || !session) return undefined
@@ -169,6 +170,7 @@ function FocusTimer({
         dailyGoalId: goal.id,
         subgoalId: subgoals.find((subgoal) => subgoal.status === 'planned')?.id,
         plannedDurationSeconds: settings.focusDurationSeconds,
+        dailyTargetMinutes: settings.dailyFocusTargetMinutes,
       })
       hasCompleted.current = false
       setSession(nextSession)
