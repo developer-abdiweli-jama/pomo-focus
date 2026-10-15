@@ -1,10 +1,15 @@
 import type { ReactNode } from 'react'
+import { BarChart3, LayoutDashboard, Settings } from 'lucide-react'
+
+export type AppPage = 'today' | 'review' | 'settings'
 
 type AppShellProps = {
   readonly children: ReactNode
+  readonly activePage: AppPage
+  readonly onNavigate: (page: AppPage) => void
 }
 
-function AppShell({ children }: AppShellProps) {
+function AppShell({ children, activePage, onNavigate }: AppShellProps) {
   return (
     <div className="app-shell min-h-screen text-slate-100">
       <header className="app-header">
@@ -20,6 +25,17 @@ function AppShell({ children }: AppShellProps) {
           </div>
 
           <div className="flex items-center gap-3 text-sm text-slate-400">
+            <nav className="flex items-center gap-1 rounded-xl border border-slate-800 bg-slate-950/30 p-1" aria-label="Main navigation">
+              <NavButton label="Today" active={activePage === 'today'} icon={<LayoutDashboard size={15} />} onClick={() => onNavigate('today')}>
+                Today
+              </NavButton>
+              <NavButton label="Weekly review" active={activePage === 'review'} icon={<BarChart3 size={15} />} onClick={() => onNavigate('review')}>
+                Weekly review
+              </NavButton>
+              <NavButton label="Settings" active={activePage === 'settings'} icon={<Settings size={15} />} onClick={() => onNavigate('settings')}>
+                Settings
+              </NavButton>
+            </nav>
             <span className="hidden sm:inline">Private workspace</span>
             <div className="avatar flex h-9 w-9 items-center justify-center rounded-full font-semibold text-emerald-200">
               A
@@ -32,6 +48,29 @@ function AppShell({ children }: AppShellProps) {
         {children}
       </main>
     </div>
+  )
+}
+
+type NavButtonProps = {
+  readonly label: string
+  readonly active: boolean
+  readonly icon: ReactNode
+  readonly children: ReactNode
+  readonly onClick: () => void
+}
+
+function NavButton({ label, active, icon, children, onClick }: NavButtonProps) {
+  return (
+    <button
+      type="button"
+      className={`flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs transition-colors ${active ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-800/60 hover:text-slate-300'}`}
+      aria-label={label}
+      aria-current={active ? 'page' : undefined}
+      onClick={onClick}
+    >
+      {icon}
+      <span className="hidden sm:inline">{children}</span>
+    </button>
   )
 }
 
