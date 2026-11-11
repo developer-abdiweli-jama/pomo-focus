@@ -7,7 +7,6 @@ const navItems: readonly {
 }[] = [
   { to: '/', label: 'Today', end: true },
   { to: '/goals', label: 'Goals' },
-  { to: '/focus', label: 'Focus' },
   { to: '/review', label: 'Review' },
   { to: '/settings', label: 'Settings' },
 ]

@@ -1,18 +1,18 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Clock3, Target, ChevronRight, BookOpen } from 'lucide-react'
+import { BookOpen, ChevronRight, Clock3, Target } from 'lucide-react'
+import { format } from 'date-fns'
 import { useGoalStore } from '../goals/goal.store'
 import { useRewardStore } from '../rewards/reward.store'
-import { format } from 'date-fns'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import { ProgressBar } from '../../components/ui/ProgressBar'
+import { Dialog } from '../../components/ui/Dialog'
 import { getSettings, DEFAULT_USER_SETTINGS } from '../../db/repositories/settingsRepository'
 import { getDailyGoals } from '../../db/repositories/goalRepository'
 import { getReview, saveDailyReview } from '../../db/repositories/reviewRepository'
 import { countDistractionsForRange } from '../../db/repositories/distractionRepository'
 import { getSessionsForRange } from '../../db/repositories/sessionRepository'
-import { Dialog } from '../../components/ui/Dialog'
 
 export function DashboardPage() {
   const navigate = useNavigate()
@@ -29,22 +29,25 @@ export function DashboardPage() {
   const [dailyReflection, setDailyReflection] = useState('')
   const [dailyReviewOpen, setDailyReviewOpen] = useState(false)
   const [dailyReviewError, setDailyReviewError] = useState('')
+
   useEffect(() => {
     const today = format(new Date(), 'yyyy-MM-dd')
     void refreshMetrics(today, today)
-    void Promise.all([getDailyGoals(), getSettings(), getReview(today)]).then(([goals, settings, review]) => {
-      setAllDailyGoals(goals)
-      setDailyTarget(settings?.dailyFocusTarget ?? DEFAULT_USER_SETTINGS.dailyFocusTarget)
-      setDailyReflection(review?.reflection ?? '')
-    }).catch(() => {
-      setAllDailyGoals([])
-    })
+    void Promise.all([getDailyGoals(), getSettings(), getReview(today)])
+      .then(([goals, settings, review]) => {
+        setAllDailyGoals(goals)
+        setDailyTarget(settings?.dailyFocusTarget ?? DEFAULT_USER_SETTINGS.dailyFocusTarget)
+        setDailyReflection(review?.reflection ?? '')
+      })
+      .catch(() => setAllDailyGoals([]))
   }, [refreshMetrics])
+
   const mission = monthlyMissions[0]
   const goal = selectedDailyGoal ?? dailyGoals[0]
   const goalSubgoals = goal
     ? subgoals.filter((subgoal) => subgoal.dailyGoalId === goal.id)
     : []
+  const completedSubgoals = goalSubgoals.filter((subgoal) => subgoal.status === 'completed').length
   const missionGoals = mission
     ? allDailyGoals.filter((dailyGoal) => dailyGoal.monthlyMissionId === mission.id)
     : []
@@ -53,10 +56,6 @@ export function DashboardPage() {
     : missionGoals.length > 0
       ? Math.round((missionGoals.filter((dailyGoal) => dailyGoal.status === 'completed').length / missionGoals.length) * 100)
       : 0
-
-  const handleCreateGoal = () => {
-    navigate('/goals')
-  }
 
   const handleStartFocus = () => {
     if (!goal) {
@@ -94,49 +93,137 @@ export function DashboardPage() {
   }
 
   return (
-    <>
-      <section className="mb-8 flex flex-col lg:flex-row lg:items-end justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-400/80">
-            {format(new Date(), 'EEEE, MMMM d, yyyy')}
-          </p>
-          <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-            Build a focused day.
-          </h1>
-          <p className="mt-3 max-w-xl text-[15px] leading-7 text-slate-400">
-            One clear goal, honest sessions, and steady progress toward your
-            bigger mission.
-          </p>
-        </div>
-        <div className="flex items-center gap-3 rounded-xl border border-amber-500/20 bg-amber-500/[0.07] px-4 py-3 text-sm text-amber-200">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-400/10 text-lg">
-            {currentStreak}
-          </span>
-          <span>
-            <strong className="font-semibold text-amber-100">day streak</strong>{' '}
-            <span className="ml-1 text-amber-200/60">so far</span>
-          </span>
-        </div>
-      </section>
+    <div className="mx-auto max-w-3xl">
+      <header className="mb-7">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-400/80">
+          {format(new Date(), 'EEEE, MMMM d, yyyy')}
+        </p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+          What matters today?
+        </h1>
+        <p className="mt-2 text-sm text-slate-400">
+          Choose one task, then give it your attention.
+        </p>
+      </header>
 
-      <Card className="mt-5">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="mb-2 flex items-center gap-2 text-sm font-medium text-violet-300">
-              <BookOpen size={16} /> Daily review
+      <Card className="border-emerald-400/20 bg-linear-to-br from-emerald-500/10 via-slate-900/90 to-slate-900 p-6 sm:p-8">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <div className="mb-3 flex items-center gap-2 text-sm font-medium text-emerald-400">
+              <Target size={17} />
+              <span>Today&apos;s main goal</span>
             </div>
-            <p className="text-sm text-slate-400">
-              {dailyReflection ? 'Your reflection for today is saved.' : 'Record an honest note about today to support your streak.'}
-            </p>
+            {goal ? (
+              <>
+                <h2 className="break-words text-2xl font-semibold text-white sm:text-3xl">
+                  {goal.title}
+                </h2>
+                {goal.isCarryOver && (
+                  <p className="mt-2 text-xs text-slate-400">Carried over from a previous day</p>
+                )}
+                <p className="mt-3 text-sm text-slate-400">
+                  {goal.status === 'completed' ? 'Completed for today' : goal.status.replace(/_/g, ' ')}
+                </p>
+              </>
+            ) : (
+              <>
+                <h2 className="text-2xl font-semibold text-white">Choose one task to begin</h2>
+                <p className="mt-2 max-w-md text-sm leading-6 text-slate-400">
+                  A clear goal makes it easier to start your first focus session.
+                </p>
+              </>
+            )}
           </div>
-          <Button variant="secondary" onClick={() => setDailyReviewOpen(true)}>
-            {dailyReflection ? 'Edit today’s review' : 'Write today’s review'}
-          </Button>
+
+          <div className="flex shrink-0 flex-col gap-2 sm:items-stretch">
+            <Button onClick={handleStartFocus} disabled={isLoading}>
+              {goal ? 'Start focus' : 'Create today’s goal'}
+            </Button>
+            {goal && (
+              <Button variant="secondary" onClick={() => navigate('/goals')} disabled={isLoading}>
+                Edit goal
+              </Button>
+            )}
+          </div>
         </div>
+
+        {goal && goalSubgoals.length > 0 && (
+          <details className="mt-7 border-t border-slate-700/60 pt-4">
+            <summary className="cursor-pointer list-none text-sm text-slate-400 marker:hidden">
+              Subgoals <span className="ml-1 text-slate-500">{completedSubgoals}/{goalSubgoals.length} complete</span>
+            </summary>
+            <ul className="mt-3 space-y-2">
+              {goalSubgoals.map((subgoal) => (
+                <li key={subgoal.id} className="flex items-center gap-3 text-sm text-slate-300">
+                  <span
+                    aria-hidden="true"
+                    className={`h-2 w-2 shrink-0 rounded-full ${subgoal.status === 'completed' ? 'bg-emerald-400' : 'bg-slate-600'}`}
+                  />
+                  <span className={subgoal.status === 'completed' ? 'text-slate-500 line-through' : ''}>
+                    {subgoal.title}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
       </Card>
 
-      <Dialog open={dailyReviewOpen} onClose={() => setDailyReviewOpen(false)} title="Daily review">
-        <p className="mb-4 text-sm text-slate-300">What did you focus on today? What went well, and what would you change tomorrow?</p>
+      <details className="mt-4 rounded-xl border border-slate-700/50 bg-slate-900/50 px-5 py-4">
+        <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-slate-300 marker:hidden">
+          <Clock3 size={16} className="text-sky-400" />
+          Today&apos;s progress and reflection
+        </summary>
+        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-lg border border-slate-700/40 bg-slate-800/40 p-4">
+            <p className="text-xs text-slate-500">Focus time</p>
+            <p className="mt-2 text-xl font-semibold text-white">{totalFocusMinutes}m</p>
+          </div>
+          <div className="rounded-lg border border-slate-700/40 bg-slate-800/40 p-4">
+            <p className="text-xs text-slate-500">Daily target</p>
+            <p className="mt-2 text-xl font-semibold text-white">{dailyTarget}m</p>
+            <div className="mt-3">
+              <ProgressBar value={Math.min(100, Math.round((totalFocusMinutes / dailyTarget) * 100))} />
+            </div>
+          </div>
+          <div className="rounded-lg border border-slate-700/40 bg-slate-800/40 p-4">
+            <p className="text-xs text-slate-500">Current streak</p>
+            <p className="mt-2 text-xl font-semibold text-white">{currentStreak} days</p>
+          </div>
+        </div>
+
+        {mission && (
+          <div className="mt-4 rounded-lg border border-emerald-400/15 bg-emerald-500/[0.06] p-4">
+            <div className="mb-2 flex items-center justify-between gap-3 text-sm">
+              <span className="font-medium text-emerald-300">Monthly mission · {mission.title}</span>
+              <span className="shrink-0 text-emerald-400/80">{missionProgress}%</span>
+            </div>
+            <ProgressBar value={missionProgress} />
+          </div>
+        )}
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-700/50 pt-4">
+          <div className="text-sm text-slate-400">
+            <BookOpen size={15} className="mr-2 inline text-violet-300" />
+            {dailyReflection ? 'Today’s reflection is saved.' : 'Take a moment to reflect on today.'}
+          </div>
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={() => navigate('/review')} className="px-2">
+              Weekly review <ChevronRight size={15} className="ml-1" />
+            </Button>
+            <Button variant="secondary" onClick={() => setDailyReviewOpen(true)}>
+              {dailyReflection ? 'Edit reflection' : 'Write reflection'}
+            </Button>
+          </div>
+        </div>
+      </details>
+
+      {isLoading && <p className="mt-4 text-sm text-slate-500">Loading your goals…</p>}
+
+      <Dialog open={dailyReviewOpen} onClose={() => setDailyReviewOpen(false)} title="Daily reflection">
+        <p className="mb-4 text-sm text-slate-300">
+          What helped you focus today? What would you like to adjust tomorrow?
+        </p>
         <textarea
           value={dailyReflection}
           onChange={(event) => setDailyReflection(event.target.value)}
@@ -147,195 +234,10 @@ export function DashboardPage() {
         {dailyReviewError && <p role="alert" className="mb-3 text-sm text-rose-300">{dailyReviewError}</p>}
         <div className="flex justify-end">
           <Button onClick={() => void handleSaveDailyReview()} disabled={!dailyReflection.trim()}>
-            Save today’s review
+            Save reflection
           </Button>
         </div>
       </Dialog>
-
-      <section className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
-        <Card className="border-emerald-400/20 bg-linear-to-br from-emerald-500/12 via-slate-900/90 to-slate-900">
-          <div className="mb-8 flex items-start justify-between gap-4">
-            <div>
-              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-emerald-400">
-                <Target size={17} />
-                <span>Today&apos;s main goal</span>
-              </div>
-              {goal ? (
-                <>
-                  <h2 className="text-2xl font-semibold text-white">
-                    {goal.title}
-                  </h2>
-                  {goal.isCarryOver && (
-                    <p className="mt-1 text-xs text-emerald-300/70">
-                      Carried over from a previous day
-                    </p>
-                  )}
-                </>
-              ) : (
-                <>
-                  <h2 className="text-2xl font-semibold text-white">
-                    Decide what deserves your focus
-                  </h2>
-                  <p className="mt-2 max-w-lg text-sm leading-6 text-slate-400">
-                    Your first goal will guide the sessions and subgoals you
-                    create for today.
-                  </p>
-                </>
-              )}
-              <span className={`rounded-full border px-3 py-1 text-xs ${
-                goal?.status === 'completed'
-                  ? 'border-emerald-500 bg-emerald-500/20 text-emerald-300'
-                  : goal?.status === 'in_progress'
-                    ? 'border-sky-500 bg-sky-500/20 text-sky-300'
-                    : 'border-slate-700/80 bg-slate-950/40 text-slate-400'
-              }`}>
-                {goal?.status.replace(/_/g, ' ') ?? 'Not started'}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              {goal ? (
-                <Button
-                  variant="secondary"
-                  onClick={() => navigate('/goals')}
-                  disabled={isLoading}
-                >
-                  Edit goal
-                </Button>
-              ) : (
-                <Button
-                  onClick={handleCreateGoal}
-                  disabled={isLoading}
-                >
-                  Create today&apos;s goal
-                </Button>
-              )}
-              <Button
-                onClick={handleStartFocus}
-                disabled={!goal || isLoading}
-              >
-                Start focus session
-              </Button>
-            </div>
-          </div>
-
-          {goal && (
-            <div className="mb-6">
-              <div className="mb-3 flex items-center justify-between">
-                <p className="text-sm font-medium text-emerald-300">Subgoals</p>
-                <span className="text-xs text-emerald-400/70">
-                  {goalSubgoals.filter((s) => s.status === 'completed').length}/{goalSubgoals.length}
-                </span>
-              </div>
-              <div className="space-y-2">
-                {goalSubgoals.length > 0 ? (
-                  goalSubgoals.map((subgoal) => (
-                    <label
-                      key={subgoal.id}
-                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm border border-slate-700/60 bg-slate-950/50 transition-colors hover:border-emerald-500/40 cursor-pointer select-none"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={subgoal.status === 'completed'}
-                        onChange={() => {
-                          // toggled via goal store in GoalPage; here read-only display
-                        }}
-                        readOnly
-                        className="shrink-0 rounded text-emerald-400 accent-emerald-500"
-                      />
-                      <span
-                        className={`text-sm ${
-                          subgoal.status === 'completed'
-                            ? 'text-emerald-400 line-through'
-                            : 'text-slate-400'
-                        }`}
-                      >
-                        {subgoal.title}
-                      </span>
-                    </label>
-                  ))
-                ) : (
-                  <p className="text-sm text-slate-500">
-                    No subgoals yet. Add them in the goal view.
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {!goal && (
-            <div className="mb-6 rounded-xl border border-dashed border-slate-700/80 bg-slate-950/40 p-4 transition-colors hover:border-emerald-500/30">
-              <p className="text-sm text-slate-500">No goal created yet</p>
-              <p className="mt-1 text-sm text-slate-300">
-                A specific goal will make your first focus session easier to
-                start.
-              </p>
-            </div>
-          )}
-        </Card>
-
-        <Card>
-          <div className="mb-6 flex items-center gap-2 text-sm font-medium text-slate-300">
-            <Clock3 size={17} className="text-sky-400" />
-            <span>Focus summary</span>
-          </div>
-
-          <div className="grid gap-3">
-            <div className="rounded-xl border border-slate-700/40 bg-slate-800/45 p-4">
-              <p className="text-xs text-slate-500">Focus time today</p>
-              <p className="mt-2 text-2xl font-semibold text-white">
-                {totalFocusMinutes}m
-              </p>
-            </div>
-            <div className="rounded-xl border border-slate-700/40 bg-slate-800/45 p-4">
-              <p className="text-xs text-slate-500">Daily target</p>
-              <p className="mt-2 text-2xl font-semibold text-white">{dailyTarget}m</p>
-              <div className="mt-3">
-                <ProgressBar
-                  value={Math.min(100, Math.round((totalFocusMinutes / dailyTarget) * 100))}
-                />
-              </div>
-            </div>
-            <div className="rounded-xl border border-slate-700/40 bg-slate-800/45 p-4">
-              <p className="text-xs text-slate-500">Current streak</p>
-              <p className="mt-2 text-2xl font-semibold text-white">
-                {currentStreak} days
-              </p>
-            </div>
-          </div>
-
-          {mission && (
-            <div className="mt-6 rounded-xl border border-emerald-400/20 bg-emerald-500/10 p-4">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-sm font-medium text-emerald-300">
-                  Monthly mission
-                </p>
-                <span className="text-xs text-emerald-400/70">{missionProgress}%</span>
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-slate-800">
-                <div className="h-full rounded-full bg-emerald-400" style={{ width: `${missionProgress}%` }} />
-              </div>
-              <p className="mt-2 text-xs text-emerald-300/70">
-                {mission.title}
-              </p>
-            </div>
-          )}
-
-          <div className="mt-6 flex items-center justify-between gap-3">
-            <p className="text-sm text-slate-500">{mission ? 'Mission progress' : 'No monthly mission yet'}</p>
-            <Button
-              variant="ghost"
-              onClick={() => navigate('/goals')}
-              className="px-2"
-            >
-              Add mission <ChevronRight size={15} className="ml-2" />
-            </Button>
-          </div>
-        </Card>
-      </section>
-
-      {isLoading && (
-        <p className="mt-6 text-sm text-slate-500">Loading…</p>
-      )}
-    </>
+    </div>
   )
 }

@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from 'react'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import Navigation from './Navigation'
 import { getSettings, DEFAULT_USER_SETTINGS } from '../../db/repositories/settingsRepository'
 
@@ -8,6 +8,9 @@ type AppShellProps = {
 }
 
 function AppShell({ children }: AppShellProps) {
+  const { pathname } = useLocation()
+  const isFocusMode = pathname === '/focus'
+
   useEffect(() => {
     let mounted = true
     const applySavedTheme = () => {
@@ -30,7 +33,7 @@ function AppShell({ children }: AppShellProps) {
 
   return (
     <div className="app-shell min-h-screen text-slate-100">
-      <header className="app-header">
+      {!isFocusMode && <header className="app-header">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-5 lg:px-8">
           <div>
             <div className="flex items-center gap-3">
@@ -51,13 +54,15 @@ function AppShell({ children }: AppShellProps) {
             </div>
           </div>
         </div>
-      </header>
+      </header>}
 
-      <nav aria-label="Main navigation" className="border-t border-slate-800/50 bg-slate-950/40">
-        <Navigation />
-      </nav>
+      {!isFocusMode && (
+        <nav aria-label="Main navigation" className="border-t border-slate-800/50 bg-slate-950/40">
+          <Navigation />
+        </nav>
+      )}
 
-      <main className="mx-auto max-w-6xl px-5 py-8 lg:px-8 lg:py-10">
+      <main className={`mx-auto px-5 py-8 lg:px-8 lg:py-10 ${isFocusMode ? 'max-w-4xl' : 'max-w-6xl'}`}>
         {/* `children` is the outlet content slot; `Outlet` renders child routes
             when the shell is driven by the router. */}
         {children ?? <Outlet />}
