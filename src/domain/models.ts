@@ -1,120 +1,92 @@
-import type {
-  GoalStatus,
-  MilestoneType,
-  MissionStatus,
-  SessionStatus,
-  SubgoalStatus,
-} from './statuses'
+export type Status =
+  | 'planned'
+  | 'in_progress'
+  | 'completed'
+  | 'carried_over'
+  | 'cancelled'
 
-export type EntityId = string
-export type DateString = string
-export type Timestamp = string
+export type Theme = 'dark' | 'light' | 'system'
 
-export type MonthlyMission = {
-  id: EntityId
-  title: string
-  description: string
-  startDate: DateString
-  targetDate: DateString
-  status: MissionStatus
-  createdAt: Timestamp
-  completedAt?: Timestamp
+export type MilestoneType = 'session' | 'streak' | 'focus' | 'goal'
+
+export interface MonthlyMission {
+  readonly id: number
+  readonly title: string
+  readonly description: string
+  readonly startDate: string // ISO 'YYYY-MM-DD'
+  readonly targetDate: string // ISO 'YYYY-MM-DD'
+  readonly status: Status
+  readonly createdAt: number // ms since epoch
+  readonly completedAt: number | null
 }
 
-export type DailyGoal = {
-  id: EntityId
-  monthlyMissionId?: EntityId
-  title: string
-  date: DateString
-  status: GoalStatus
-  isCarryOver: boolean
-  carriedFromGoalId?: EntityId
-  carryOverCount: number
-  createdAt: Timestamp
-  completedAt?: Timestamp
+export interface DailyGoal {
+  readonly id: number
+  readonly monthlyMissionId: number | null
+  readonly title: string
+  readonly date: string // ISO 'YYYY-MM-DD'
+  readonly status: Status
+  readonly isCarryOver: boolean
+  readonly completedAt: number | null
+  readonly createdAt: number // ms since epoch
 }
 
-export type Subgoal = {
-  id: EntityId
-  dailyGoalId: EntityId
-  title: string
-  status: SubgoalStatus
-  order: number
-  createdAt: Timestamp
-  completedAt?: Timestamp
+export interface Subgoal {
+  readonly id: number
+  readonly dailyGoalId: number
+  readonly title: string
+  readonly status: Status
+  readonly completedAt: number | null
+  readonly order: number
 }
 
-export type FocusSession = {
-  id: EntityId
-  dailyGoalId: EntityId
-  subgoalId?: EntityId
-  startedAt: Timestamp
-  plannedEndAt: Timestamp
-  pausedAt?: Timestamp
-  endedAt?: Timestamp
-  plannedDurationSeconds: number
-  dailyTargetMinutes?: number
-  actualDurationSeconds: number
-  totalPausedSeconds: number
-  status: SessionStatus
+export interface FocusSession {
+  readonly id: number
+  readonly dailyGoalId: number
+  readonly subgoalId: number | null
+  readonly startedAt: number // ms since epoch
+  readonly plannedEndAt: number // ms since epoch; advances while paused or extended
+  readonly pausedAt: number | null // ms since epoch
+  readonly totalPausedTime: number // accumulated paused ms
+  readonly endedAt: number | null // ms since epoch
+  readonly plannedDuration: number // minutes
+  readonly actualDuration: number | null // minutes
+  readonly status: Status
 }
 
-export type Distraction = {
-  id: EntityId
-  sessionId: EntityId
-  note: string
-  occurredAt: Timestamp
+export interface Distraction {
+  readonly id: number
+  readonly sessionId: number
+  readonly note: string
+  readonly occurredAt: number // ms since epoch
 }
 
-export type DailyReview = {
-  id: EntityId
-  date: DateString
-  reflection: string
-  focusMinutes: number
-  completedGoal: boolean
-  distractionCount: number
-  createdAt: Timestamp
-  updatedAt: Timestamp
+export interface DailyReview {
+  readonly id: number
+  readonly date: string // ISO 'YYYY-MM-DD'
+  readonly reflection: string
+  readonly completedGoal: boolean
+  readonly focusMinutes: number
+  readonly distractionCount: number
 }
 
-export type WeeklyReview = {
-  id: EntityId
-  weekStart: DateString
-  weekEnd: DateString
-  reflection: string
-  createdAt: Timestamp
-  updatedAt: Timestamp
+export interface WeeklyReview extends Omit<DailyReview, 'id'> {
+  readonly id: number
 }
 
-export type Milestone = {
-  id: EntityId
-  type: MilestoneType
-  value: number
-  title: string
-  achievedAt: Timestamp
+export interface Milestone {
+  readonly id: number
+  readonly type: MilestoneType
+  readonly value: number
+  readonly title: string
+  readonly achievedAt: number // ms since epoch
 }
 
-export type UserSettings = {
-  id: 'default'
-  focusDurationSeconds: number
-  breakDurationSeconds: number
-  dailyFocusTargetMinutes: number
-  soundEnabled: boolean
-  theme: 'dark' | 'light' | 'system'
+export interface UserSettings {
+  readonly id: number
+  readonly focusDuration: number // minutes
+  readonly breakDuration: number // minutes
+  readonly dailyFocusTarget: number // minutes
+  readonly soundEnabled: boolean
+  readonly theme: Theme
 }
-
-export type NewMonthlyMission = Pick<
-  MonthlyMission,
-  'title' | 'description' | 'startDate' | 'targetDate'
->
-
-export type NewDailyGoal = Pick<DailyGoal, 'title' | 'date'> & {
-  monthlyMissionId?: EntityId
-}
-
-export type NewSubgoal = Pick<Subgoal, 'dailyGoalId' | 'title' | 'order'>
-
-export type NewFocusSession = Pick<
-  FocusSession,
-  'dailyGoalId' | 'subgoalId' | 'plannedDurationSeconds' | 'dailyTargetMinutes'
->

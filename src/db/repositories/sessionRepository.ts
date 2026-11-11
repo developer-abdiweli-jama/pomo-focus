@@ -1,124 +1,101 @@
-import { db } from '../database'
-import type {
-  FocusSession,
-  EntityId,
-  NewFocusSession,
-} from '../../domain/models'
-import { requirePositiveNumber } from '../../domain/validation'
-import { createId } from '../../lib/ids'
+import { addEntry, db } from '../database'
+import { differenceInMinutes, endOfDay, startOfDay } from 'date-fns'
+import type { FocusSession } from '../../domain/models'
 
-export async function startFocusSession(
-  input: NewFocusSession,
-): Promise<FocusSession> {
-  requirePositiveNumber(input.plannedDurationSeconds, 'Focus duration')
-
-  const startedAt = new Date()
-  const session: FocusSession = {
-    ...input,
-    id: createId(),
-    startedAt: startedAt.toISOString(),
-    plannedEndAt: new Date(
-      startedAt.getTime() + input.plannedDurationSeconds * 1000,
-    ).toISOString(),
-    plannedDurationSeconds: input.plannedDurationSeconds,
-    actualDurationSeconds: 0,
-    totalPausedSeconds: 0,
-    status: 'running',
-  }
-
-  await db.focusSessions.add(session)
-  return session
+export async function createFocusSession(
+  session: Omit<FocusSession, 'id'>,
+): Promise<number> {
+  return addEntry(db.focusSessions, session)
 }
 
-export async function pauseFocusSession(id: EntityId): Promise<void> {
+export async function pauseSession(id: number, pausedAt = Date.now()): Promise<void> {
   const session = await db.focusSessions.get(id)
+  if (!session) throw new Error(`Focus session ${id} not found`)
+  if (session.status !== 'in_progress' || session.pausedAt !== null) return
+  await db.focusSessions.update(id, { pausedAt })
+}
 
-  if (!session || session.status !== 'running') {
-    throw new Error('This focus session is not running.')
-  }
-
-  const pausedAt = new Date()
-  const remainingSeconds = Math.max(
-    0,
-    Math.ceil((new Date(session.plannedEndAt).getTime() - pausedAt.getTime()) / 1000),
-  )
-
+export async function resumeSession(id: number, resumedAt = Date.now()): Promise<void> {
+  const session = await db.focusSessions.get(id)
+  if (!session) throw new Error(`Focus session ${id} not found`)
+  if (session.status !== 'in_progress' || session.pausedAt === null) return
+  const pauseDuration = Math.max(0, resumedAt - session.pausedAt)
   await db.focusSessions.update(id, {
-    status: 'paused',
-    pausedAt: pausedAt.toISOString(),
-    plannedEndAt: new Date(pausedAt.getTime() + remainingSeconds * 1000).toISOString(),
+    pausedAt: null,
+    totalPausedTime: session.totalPausedTime + pauseDuration,
+    plannedEndAt: session.plannedEndAt + pauseDuration,
   })
 }
 
-export async function resumeFocusSession(id: EntityId): Promise<FocusSession> {
+export async function extendSession(id: number, minutes: number): Promise<void> {
   const session = await db.focusSessions.get(id)
-
-  if (!session || !session.pausedAt) {
-    throw new Error('This focus session is not paused.')
-  }
-
-  const resumedAt = new Date()
-  const pausedSeconds = Math.max(
-    0,
-    Math.round((resumedAt.getTime() - new Date(session.pausedAt).getTime()) / 1000),
-  )
-  const remainingSeconds = Math.max(
-    0,
-    Math.ceil((new Date(session.plannedEndAt).getTime() - new Date(session.pausedAt).getTime()) / 1000),
-  )
-  const plannedEndAt = new Date(resumedAt.getTime() + remainingSeconds * 1000).toISOString()
-
+  if (!session) throw new Error(`Focus session ${id} not found`)
+  if (session.status !== 'in_progress' || minutes <= 0) return
   await db.focusSessions.update(id, {
-    status: 'running',
-    pausedAt: undefined,
-    plannedEndAt,
-    totalPausedSeconds: session.totalPausedSeconds + pausedSeconds,
+    plannedDuration: session.plannedDuration + minutes,
+    plannedEndAt: session.plannedEndAt + minutes * 60_000,
   })
-
-  return {
-    ...session,
-    status: 'running',
-    pausedAt: undefined,
-    plannedEndAt,
-    totalPausedSeconds: session.totalPausedSeconds + pausedSeconds,
-  }
 }
 
-export async function completeFocusSession(
-  id: EntityId,
-  actualDurationSeconds: number,
+export async function getSession(id: number): Promise<FocusSession | null> {
+  return (await db.focusSessions.get(id)) ?? null
+}
+
+export async function updateFocusSession(
+  id: number,
+  changes: Partial<Omit<FocusSession, 'id'>>,
 ): Promise<void> {
-  requirePositiveNumber(actualDurationSeconds, 'Actual focus duration')
+  await db.focusSessions.update(id, changes)
+}
 
+export async function endSession(id: number, endedAt: number): Promise<void> {
+  const session = await db.focusSessions.get(id)
+  if (!session) {
+    throw new Error(`Focus session ${id} not found`)
+  }
+  const pausedNow = session.pausedAt === null ? 0 : Math.max(0, endedAt - session.pausedAt)
+  const actualDuration = Math.max(
+    0,
+    differenceInMinutes(endedAt - session.totalPausedTime - pausedNow, session.startedAt),
+  )
   await db.focusSessions.update(id, {
+    endedAt,
+    actualDuration,
+    pausedAt: null,
     status: 'completed',
-    endedAt: new Date().toISOString(),
-    actualDurationSeconds,
   })
 }
 
-export async function cancelFocusSession(id: EntityId): Promise<void> {
-  const session = await db.focusSessions.get(id)
+export async function getSessionsForDay(
+  date: string,
+): Promise<readonly FocusSession[]> {
+  const from = startOfDay(new Date(date)).getTime()
+  const to = endOfDay(new Date(date)).getTime()
+  const sessions = await db.focusSessions.where('startedAt').between(from, to).toArray()
+  return sessions.slice().sort((a, b) => a.startedAt - b.startedAt)
+}
 
-  if (!session) {
-    throw new Error('This focus session does not exist.')
+export async function getSessionsForRange(
+  from: string,
+  to: string,
+): Promise<readonly FocusSession[]> {
+  const fromMs = startOfDay(new Date(from)).getTime()
+  const toMs = endOfDay(new Date(to)).getTime()
+  const sessions = await db.focusSessions.where('startedAt').between(fromMs, toMs).toArray()
+  return sessions.slice().sort((a, b) => a.startedAt - b.startedAt)
+}
+
+export async function getAllSessions(): Promise<readonly FocusSession[]> {
+  return db.focusSessions.toArray()
+}
+
+export async function getActiveSession(): Promise<FocusSession | null> {
+  const sessions = await db.focusSessions.where('status').equals('in_progress').toArray()
+  if (sessions.length === 0) {
+    return null
   }
-
-  const referenceTime = session.status === 'paused' && session.pausedAt
-    ? new Date(session.pausedAt).getTime()
-    : Date.now()
-  const remainingSeconds = Math.max(
-    0,
-    Math.ceil((new Date(session.plannedEndAt).getTime() - referenceTime) / 1000),
+  return sessions.reduce(
+    (latest, session) => (session.startedAt > latest.startedAt ? session : latest),
+    sessions[0],
   )
-  const actualDurationSeconds = Math.max(
-    0,
-    session.plannedDurationSeconds - remainingSeconds,
-  )
-
-  await db.focusSessions.update(id, {
-    status: 'cancelled',
-    endedAt: new Date().toISOString(),
-    actualDurationSeconds,
-  })
 }

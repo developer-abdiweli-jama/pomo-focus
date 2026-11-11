@@ -1,74 +1,68 @@
-import { Minimize2, X } from 'lucide-react'
 import type { ReactNode } from 'react'
-import Button from './Button'
+import { useCallback, useEffect } from 'react'
+import { X } from 'lucide-react'
 
 type DialogProps = {
-  title: string
-  description?: string
-  children: ReactNode
-  onClose: () => void
-  onMinimize?: () => void
-  dismissOnBackdrop?: boolean
+  readonly open: boolean
+  readonly onClose: () => void
+  readonly title?: string
+  readonly children: ReactNode
 }
 
-function Dialog({
-  title,
-  description,
-  children,
-  onClose,
-  onMinimize,
-  dismissOnBackdrop = true,
-}: DialogProps) {
+export function Dialog({ open, onClose, title, children }: DialogProps) {
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    },
+    [onClose],
+  )
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [open, handleKeyDown])
+
+  if (!open) {
+    return null
+  }
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (dismissOnBackdrop && event.target === event.currentTarget) {
-          onClose()
-        }
-      }}
-    >
-      <section
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl shadow-black/40"
+    <>
+      <div
+        className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div
+        className="fixed z-50 top-1/2 left-1/2 z-[60] max-w-md w-full translate-x-[-50%] translate-y-[-50%] rounded-2xl border border-slate-700 bg-slate-900/95 p-6 shadow-2xl shadow-black/20 ring-1 ring-white/10"
         role="dialog"
         aria-modal="true"
         aria-labelledby="dialog-title"
-        onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="mb-6 flex items-start justify-between gap-4">
-          <div>
-            <h2 id="dialog-title" className="text-xl font-semibold text-white">
+        {title && (
+          <div className="mb-4 flex items-center gap-2">
+            <h2 id="dialog-title" className="text-lg font-semibold text-white">
               {title}
             </h2>
-            {description && <p className="mt-2 text-sm leading-6 text-slate-400">{description}</p>}
           </div>
-          <div className="-mr-2 -mt-2 flex items-center gap-1">
-            {onMinimize && (
-              <Button
-                variant="ghost"
-                className="px-2"
-                aria-label="Minimize dialog"
-                onClick={onMinimize}
-              >
-                <Minimize2 size={17} />
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              className="px-2"
-              aria-label="Close dialog"
-              onClick={onClose}
-            >
-              <X size={18} />
-            </Button>
-          </div>
-        </div>
-
-        {children}
-      </section>
-    </div>
+        )}
+        <div className="space-y-4">{children}</div>
+        <button
+          type="button"
+          className="absolute right-3 top-3 rounded-md p-2 text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+          onClick={onClose}
+          aria-label="Close dialog"
+        >
+          <X size={18} />
+        </button>
+      </div>
+    </>
   )
 }
-
-export default Dialog

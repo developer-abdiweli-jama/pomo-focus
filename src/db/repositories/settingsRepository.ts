@@ -1,50 +1,32 @@
 import { db } from '../database'
 import type { UserSettings } from '../../domain/models'
-import { requirePositiveNumber } from '../../domain/validation'
 
-export const defaultSettings: UserSettings = {
-  id: 'default',
-  focusDurationSeconds: 50 * 60,
-  breakDurationSeconds: 10 * 60,
-  dailyFocusTargetMinutes: 50,
+export const DEFAULT_USER_SETTINGS: UserSettings = {
+  id: 1,
+  focusDuration: 50,
+  breakDuration: 10,
+  dailyFocusTarget: 50,
   soundEnabled: true,
-  theme: 'dark',
+  theme: 'system',
 }
 
-export async function getSettings(): Promise<UserSettings> {
-  const settings = await db.settings.get('default')
+export async function getSettings(): Promise<UserSettings | null> {
+  return (await db.userSettings.get(1)) ?? null
+}
 
-  if (settings) {
-    return settings
+export async function saveSettings(
+  partial: Omit<Partial<UserSettings>, 'id'>,
+): Promise<void> {
+  const existing = await db.userSettings.get(1)
+  const data: UserSettings = {
+    ...DEFAULT_USER_SETTINGS,
+    ...existing,
+    ...partial,
+    id: 1,
   }
-
-  return defaultSettings
-}
-
-type SettingsUpdate = Pick<
-  UserSettings,
-  'focusDurationSeconds' | 'breakDurationSeconds' | 'dailyFocusTargetMinutes'
->
-
-export async function updateSettings(input: SettingsUpdate): Promise<UserSettings> {
-  requireWholeMinutes(input.focusDurationSeconds, 'Focus duration')
-  requireWholeMinutes(input.breakDurationSeconds, 'Break duration')
-  requireWholeMinutes(input.dailyFocusTargetMinutes, 'Daily focus target', false)
-
-  const currentSettings = await getSettings()
-  const nextSettings: UserSettings = {
-    ...currentSettings,
-    ...input,
-  }
-
-  await db.settings.put(nextSettings)
-  return nextSettings
-}
-
-function requireWholeMinutes(value: number, fieldName: string, isSeconds = true): void {
-  requirePositiveNumber(value, fieldName)
-
-  if (!Number.isInteger(value) || (isSeconds && value % 60 !== 0)) {
-    throw new Error(`${fieldName} must use whole minutes.`)
+  if (existing) {
+    await db.userSettings.put(data)
+  } else {
+    await db.userSettings.add(data)
   }
 }

@@ -1,134 +1,344 @@
-import { useLiveQuery } from 'dexie-react-hooks'
-import { Download, Trash2, Upload } from 'lucide-react'
-import { useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Save, Download, Upload, Trash2, AlertCircle, RefreshCw } from 'lucide-react'
+import { useRewardStore } from '../rewards/reward.store'
+import { getSettings, saveSettings, DEFAULT_USER_SETTINGS } from '../../db/repositories/settingsRepository'
+import { db, exportAllData, importAllData } from '../../db/database'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
-import { clearDatabase, exportDatabase, importDatabase } from '../../db/backupRepository'
-import { getSettings, updateSettings } from '../../db/repositories/settingsRepository'
-import type { UserSettings } from '../../domain/models'
+import { Dialog } from '../../components/ui/Dialog'
+import { FormField } from '../../components/ui/FormField'
 
-const inputClasses =
-  'mt-2 w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-100 outline-none transition-colors placeholder:text-slate-600 focus:border-emerald-400'
+export function SettingsPage() {
+  const navigate = useNavigate()
+  const refreshMetrics = useRewardStore((state) => state.refreshMetrics)
 
-function SettingsPage() {
-  const storedSettings = useLiveQuery(getSettings, [])
+  const [settings, setSettings] = useState<{
+    focusDuration: number
+    breakDuration: number
+    dailyFocusTarget: number
+    soundEnabled: boolean
+    theme: 'dark' | 'light' | 'system'
+  }>({
+    focusDuration: DEFAULT_USER_SETTINGS.focusDuration,
+    breakDuration: DEFAULT_USER_SETTINGS.breakDuration,
+    dailyFocusTarget: DEFAULT_USER_SETTINGS.dailyFocusTarget,
+    soundEnabled: DEFAULT_USER_SETTINGS.soundEnabled,
+    theme: DEFAULT_USER_SETTINGS.theme,
+  })
+  const [saving, setSaving] = useState(false)
+  const [openClear, setOpenClear] = useState(false)
+  const [openImport, setOpenImport] = useState(false)
+  const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)
 
-  return (
-    <section className="max-w-2xl">
-      <div className="mb-8">
-        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300/80">Settings</p>
-        <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">Shape the rhythm.</h1>
-        <p className="mt-3 text-[15px] leading-7 text-slate-400">
-          Choose the focus and recovery rhythm that fits your real work. These settings apply to new sessions.
-        </p>
-      </div>
+  useEffect(() => {
+    let mounted = true
+    getSettings().then((loaded) => {
+      if (!mounted) return
+      if (loaded) {
+        setSettings({
+          focusDuration: loaded.focusDuration,
+          breakDuration: loaded.breakDuration,
+          dailyFocusTarget: loaded.dailyFocusTarget,
+          soundEnabled: loaded.soundEnabled,
+          theme: loaded.theme,
+        })
+      }
+    })
+    return () => {
+      mounted = false
+    }
+  }, [])
 
-      {storedSettings ? <SettingsForm key={`${storedSettings.focusDurationSeconds}-${storedSettings.breakDurationSeconds}-${storedSettings.dailyFocusTargetMinutes}`} settings={storedSettings} /> : <Card><p className="text-sm text-slate-400">Loading settings...</p></Card>}
-    </section>
-  )
-}
-
-function SettingsForm({ settings }: { settings: UserSettings }) {
-  const [focusMinutes, setFocusMinutes] = useState(String(settings.focusDurationSeconds / 60))
-  const [breakMinutes, setBreakMinutes] = useState(String(settings.breakDurationSeconds / 60))
-  const [dailyTargetMinutes, setDailyTargetMinutes] = useState(String(settings.dailyFocusTargetMinutes))
-  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
-  const [backupState, setBackupState] = useState('')
-  const importInputRef = useRef<HTMLInputElement>(null)
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault()
-    setSaveState('saving')
-
+  const handleSave = async () => {
+    setSaving(true)
     try {
-      await updateSettings({
-        focusDurationSeconds: Number(focusMinutes) * 60,
-        breakDurationSeconds: Number(breakMinutes) * 60,
-        dailyFocusTargetMinutes: Number(dailyTargetMinutes),
+      await saveSettings({
+        focusDuration: settings.focusDuration,
+        breakDuration: settings.breakDuration,
+        dailyFocusTarget: settings.dailyFocusTarget,
+        soundEnabled: settings.soundEnabled,
+        theme: settings.theme,
       })
-      setSaveState('saved')
+      window.dispatchEvent(new Event('pomo-settings-updated'))
+      setMessage({ kind: 'info', text: 'Settings saved.' })
     } catch {
-      setSaveState('error')
+      setMessage({ kind: 'error', text: 'Failed to save settings.' })
+    } finally {
+      setSaving(false)
     }
   }
 
-  async function handleExport(): Promise<void> {
+  const handleExport = async () => {
     try {
-      const backup = await exportDatabase()
-      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })
+      const data = await exportAllData()
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `pomo-focus-backup-${new Date().toISOString().slice(0, 10)}.json`
-      link.click()
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `pomo-focus-export-${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(anchor)
+      anchor.click()
+      document.body.removeChild(anchor)
       URL.revokeObjectURL(url)
-      setBackupState('Backup downloaded.')
+      setMessage({ kind: 'info', text: 'Data exported.' })
     } catch {
-      setBackupState('Could not export your data.')
+      setMessage({ kind: 'error', text: 'Export failed.' })
     }
   }
 
-  async function handleImport(event: ChangeEvent<HTMLInputElement>): Promise<void> {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
+  const handleImportFile = (file: File) => {
+    const reader = new FileReader()
+    reader.onload = async (event) => {
+      try {
+        const data = JSON.parse((event.target?.result as string) ?? '{}')
+        await importAllData(data)
+        await refreshMetrics()
+        setOpenImport(false)
+        setMessage({ kind: 'info', text: 'Data imported.' })
+      } catch {
+        setMessage({ kind: 'error', text: 'Import failed. Invalid file.' })
+      }
+    }
+    reader.readAsText(file)
+  }
 
+  const handleClearAll = async () => {
     try {
-      await importDatabase(JSON.parse(await file.text()))
-      setBackupState('Backup restored.')
-    } catch (caughtError) {
-      setBackupState(caughtError instanceof Error ? caughtError.message : 'Could not restore this backup.')
+      const tables = [
+        db.monthlyMissions,
+        db.dailyGoals,
+        db.subgoals,
+        db.focusSessions,
+        db.distractions,
+        db.dailyReviews,
+        db.weeklyReviews,
+        db.milestones,
+        db.userSettings,
+      ]
+      await db.transaction('rw', tables, async () => {
+        for (const table of tables) {
+          await table.clear()
+        }
+      })
+      await saveSettings(DEFAULT_USER_SETTINGS)
+      setOpenClear(false)
+      setMessage({ kind: 'info', text: 'All data cleared.' })
+    } catch {
+      setMessage({ kind: 'error', text: 'Clear failed.' })
     }
   }
 
-  async function handleClear(): Promise<void> {
-    if (!window.confirm('Clear all local Pomo Focus data? This cannot be undone without a backup.')) return
-
-    await clearDatabase()
-    setBackupState('Local data cleared.')
+  const handleResetStreaks = async () => {
+    try {
+      await db.transaction('rw', [db.milestones, db.dailyReviews, db.weeklyReviews], async () => {
+        await db.milestones.clear()
+        await db.dailyReviews.clear()
+        await db.weeklyReviews.clear()
+      })
+      await refreshMetrics()
+      setMessage({ kind: 'info', text: 'Streaks and reviews reset.' })
+    } catch {
+      setMessage({ kind: 'error', text: 'Reset failed.' })
+    }
   }
 
   return (
-    <Card>
-      <form className="space-y-5" onSubmit={handleSubmit}>
-        <label className="block text-sm font-medium text-slate-300">
-          Focus length (minutes)
-          <input className={inputClasses} type="number" min="1" step="1" value={focusMinutes} onChange={(event) => setFocusMinutes(event.target.value)} />
-          <span className="mt-1 block text-xs font-normal text-slate-500">How long a new focus session runs.</span>
-        </label>
-
-        <label className="block text-sm font-medium text-slate-300">
-          Break length (minutes)
-          <input className={inputClasses} type="number" min="1" step="1" value={breakMinutes} onChange={(event) => setBreakMinutes(event.target.value)} />
-          <span className="mt-1 block text-xs font-normal text-slate-500">The break is offered after a session and never starts automatically.</span>
-        </label>
-
-        <label className="block text-sm font-medium text-slate-300">
-          Daily focus target (minutes)
-          <input className={inputClasses} type="number" min="1" step="1" value={dailyTargetMinutes} onChange={(event) => setDailyTargetMinutes(event.target.value)} />
-          <span className="mt-1 block text-xs font-normal text-slate-500">A day counts toward your streak after completed focus time reaches this target.</span>
-        </label>
-
-        <div className="flex items-center justify-end gap-3 border-t border-slate-800 pt-5">
-          {saveState === 'saved' && <span className="text-xs text-emerald-300" role="status">Saved locally.</span>}
-          {saveState === 'error' && <span className="text-xs text-rose-300" role="alert">Could not save these settings.</span>}
-          <Button type="submit" disabled={saveState === 'saving'}>{saveState === 'saving' ? 'Saving...' : 'Save settings'}</Button>
-        </div>
-      </form>
-
-      <div className="mt-8 border-t border-slate-800 pt-6">
-        <h2 className="text-base font-semibold text-white">Local data</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-400">Your goals, sessions, reviews, and settings stay in this browser. Export a backup before clearing browser data.</p>
-        <div className="mt-4 flex flex-wrap gap-3">
-          <Button type="button" variant="secondary" onClick={() => void handleExport}><Download size={15} className="mr-2" /> Export backup</Button>
-          <Button type="button" variant="ghost" onClick={() => importInputRef.current?.click()}><Upload size={15} className="mr-2" /> Import backup</Button>
-          <Button type="button" variant="ghost" className="text-rose-300 hover:text-rose-200" onClick={() => void handleClear}><Trash2 size={15} className="mr-2" /> Clear local data</Button>
-          <input ref={importInputRef} className="hidden" type="file" accept="application/json" onChange={(event) => void handleImport(event)} />
-        </div>
-        {backupState && <p className="mt-3 text-xs text-slate-400" role="status">{backupState}</p>}
+    <div className="space-y-6">
+      <div className="flex items-center justify-between gap-3">
+        <Button variant="ghost" onClick={() => navigate('/')}>
+          <AlertCircle size={16} className="mr-2" /> Back to today
+        </Button>
+        <h1 className="text-2xl font-semibold tracking-tight text-white">Settings</h1>
       </div>
-    </Card>
+
+      {message && (
+        <div
+          className={`rounded-lg border p-3 text-xs ${
+            message.kind === 'error'
+              ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+              : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+          }`}
+        >
+          {message.text}
+        </div>
+      )}
+
+      <Card>
+        <h2 className="text-sm font-semibold text-slate-200 mb-4">Session settings</h2>
+        <div className="space-y-4">
+          <FormField label="Focus duration (minutes)">
+            <select
+              value={[25, 50, 75].includes(settings.focusDuration) ? String(settings.focusDuration) : 'custom'}
+              onChange={(e) => setSettings({
+                ...settings,
+                focusDuration: e.target.value === 'custom' ? 60 : Number(e.target.value),
+              })}
+              className="rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              {[25, 50, 75].map((m) => (
+                <option key={m} value={String(m)}>
+                  {m} minutes
+                </option>
+              ))}
+              <option value="custom">Custom…</option>
+            </select>
+          </FormField>
+          {!([25, 50, 75].includes(settings.focusDuration)) && (
+            <FormField label="Custom focus duration (minutes)">
+              <input
+                type="number"
+                min="1"
+                max="300"
+                value={String(settings.focusDuration)}
+                onChange={(e) => setSettings({
+                  ...settings,
+                  focusDuration: Math.max(1, Number(e.target.value) || 1),
+                })}
+                className="rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </FormField>
+          )}
+          <FormField label="Break duration (minutes)">
+            <select
+              value={String(settings.breakDuration)}
+              onChange={(e) =>
+                setSettings({ ...settings, breakDuration: Number(e.target.value) })
+              }
+              className="rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              {[5, 10, 15, 20].map((m) => (
+                <option key={m} value={String(m)}>
+                  {m} minutes
+                </option>
+              ))}
+            </select>
+          </FormField>
+          <FormField label="Daily focus target (minutes)">
+            <input
+              type="number"
+              min="1"
+              value={String(settings.dailyFocusTarget)}
+              onChange={(e) =>
+                setSettings({ ...settings, dailyFocusTarget: Math.max(1, Number(e.target.value) || 1) })
+              }
+              className="rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </FormField>
+          <FormField label="Sound">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.soundEnabled}
+                onChange={(e) =>
+                  setSettings({ ...settings, soundEnabled: e.target.checked })
+                }
+                className="rounded text-emerald-400 accent-emerald-500"
+              />
+              <span className="text-sm text-slate-300">Play gentle tones on session events</span>
+            </label>
+          </FormField>
+          <FormField label="Theme">
+            <select
+              value={settings.theme}
+              onChange={(e) =>
+                setSettings({ ...settings, theme: e.target.value as 'dark' | 'light' | 'system' })
+              }
+              className="rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="system">System</option>
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+            </select>
+          </FormField>
+          <Button onClick={handleSave} disabled={saving} className="w-full">
+            {saving ? 'Saving…' : <><Save size={16} className="mr-2" /> Save settings</>}
+          </Button>
+        </div>
+      </Card>
+
+      <Card>
+        <h2 className="text-sm font-semibold text-slate-200 mb-4">Data &amp; privacy</h2>
+        <p className="text-sm text-slate-400 mb-4">
+          Your data stays on your device in IndexedDB. Export a backup or
+          restore from one at any time.
+        </p>
+        <div className="space-y-2">
+          <Button
+            variant="ghost"
+            onClick={handleExport}
+            className="w-full justify-start"
+          >
+            <Download size={16} className="mr-2" /> Export data to JSON
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => setOpenImport(true)}
+            className="w-full justify-start"
+          >
+            <Upload size={16} className="mr-2" /> Import data from JSON
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={handleResetStreaks}
+            className="w-full justify-start text-rose-400 hover:text-rose-300"
+          >
+            <RefreshCw size={16} className="mr-2" /> Reset streaks &amp; reviews
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => setOpenClear(true)}
+            className="w-full justify-start text-rose-400 hover:text-rose-300"
+          >
+            <Trash2 size={16} className="mr-2" /> Clear all data
+          </Button>
+        </div>
+      </Card>
+
+      <Dialog
+        open={openImport}
+        onClose={() => setOpenImport(false)}
+        title="Import data"
+      >
+        <p className="text-sm text-slate-300 mb-4">
+          Select a previously exported JSON file. This will replace all current
+          data.
+        </p>
+        <input
+          type="file"
+          accept=".json"
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (file) handleImportFile(file)
+          }}
+          className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border file:border-slate-700 file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 cursor-pointer"
+        />
+        <div className="mt-4 flex justify-end">
+          <Button variant="ghost" onClick={() => setOpenImport(false)}>
+            Cancel
+          </Button>
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={openClear}
+        onClose={() => setOpenClear(false)}
+        title="Clear all data"
+      >
+        <p className="text-sm text-slate-300 mb-4">
+          This permanently deletes every goal, session, distraction, review,
+          and milestone on this device. It cannot be undone unless you have an
+          exported backup.
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setOpenClear(false)}>
+            Cancel
+          </Button>
+          <Button variant="ghost" className="text-rose-400 hover:bg-rose-500/10" onClick={handleClearAll}>
+            Clear everything
+          </Button>
+        </div>
+      </Dialog>
+    </div>
   )
 }
-
-export default SettingsPage

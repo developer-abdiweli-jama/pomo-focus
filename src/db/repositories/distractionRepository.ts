@@ -1,25 +1,45 @@
-import { db } from '../database'
-import type { Distraction, EntityId } from '../../domain/models'
-import { requireText } from '../../domain/validation'
-import { createId } from '../../lib/ids'
+import { addEntry, db } from '../database'
+import { endOfDay, startOfDay } from 'date-fns'
+import type { Distraction } from '../../domain/models'
 
-export async function recordDistraction(
-  sessionId: EntityId,
-  note: string,
-): Promise<Distraction> {
-  const distraction: Distraction = {
-    id: createId(),
-    sessionId,
-    note: requireText(note, 'Distraction note'),
-    occurredAt: new Date().toISOString(),
-  }
-
-  await db.distractions.add(distraction)
-  return distraction
+export async function saveDistraction(
+  distraction: Omit<Distraction, 'id'>,
+): Promise<number> {
+  return addEntry(db.distractions, distraction)
 }
 
-export async function listDistractionsForSession(
-  sessionId: EntityId,
-): Promise<Distraction[]> {
-  return db.distractions.where('sessionId').equals(sessionId).sortBy('occurredAt')
+export async function getDistractionsForSession(
+  sessionId: number,
+): Promise<readonly Distraction[]> {
+  const distractions = await db.distractions
+    .where('sessionId')
+    .equals(sessionId)
+    .toArray()
+  return distractions.slice().sort((a, b) => a.occurredAt - b.occurredAt)
+}
+
+export async function getDistractionsForDay(
+  date: string,
+): Promise<readonly Distraction[]> {
+  const from = startOfDay(new Date(date)).getTime()
+  const to = endOfDay(new Date(date)).getTime()
+  return db.distractions.where('occurredAt').between(from, to).toArray()
+}
+
+export async function getDistractionsForRange(
+  fromDate: string,
+  toDate: string,
+): Promise<readonly Distraction[]> {
+  const from = startOfDay(new Date(fromDate)).getTime()
+  const to = endOfDay(new Date(toDate)).getTime()
+  return db.distractions.where('occurredAt').between(from, to, true, true).toArray()
+}
+
+export async function countDistractionsForRange(
+  from: string,
+  to: string,
+): Promise<number> {
+  const fromMs = startOfDay(new Date(from)).getTime()
+  const toMs = endOfDay(new Date(to)).getTime()
+  return db.distractions.where('occurredAt').between(fromMs, toMs).count()
 }

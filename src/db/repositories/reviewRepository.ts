@@ -1,56 +1,29 @@
-import { db } from '../database'
-import type { DailyReview, WeeklyReview } from '../../domain/models'
-import { createId } from '../../lib/ids'
-
-type SaveDailyReviewInput = Pick<
-  DailyReview,
-  'date' | 'focusMinutes' | 'completedGoal' | 'distractionCount'
-> & {
-  reflection: string
-}
+import { addEntry, db } from '../database'
+import type { DailyReview } from '../../domain/models'
 
 export async function saveDailyReview(
-  input: SaveDailyReviewInput,
-): Promise<DailyReview> {
-  const now = new Date().toISOString()
-  const existingReview = await db.dailyReviews.where('date').equals(input.date).first()
-  const review: DailyReview = {
-    ...input,
-    id: existingReview?.id ?? createId(),
-    reflection: input.reflection.trim(),
-    createdAt: existingReview?.createdAt ?? now,
-    updatedAt: now,
+  review: Omit<DailyReview, 'id'>,
+): Promise<number> {
+  const existing = await db.dailyReviews.where('date').equals(review.date).first()
+  if (existing) {
+    await db.dailyReviews.update(existing.id, review)
+    return existing.id
   }
-
-  await db.dailyReviews.put(review)
-  return review
+  return addEntry(db.dailyReviews, review)
 }
 
-export async function getDailyReview(date: string): Promise<DailyReview | undefined> {
-  return db.dailyReviews.where('date').equals(date).first()
+export async function getReview(date: string): Promise<DailyReview | null> {
+  return (await db.dailyReviews.where('date').equals(date).first()) ?? null
 }
 
-type SaveWeeklyReviewInput = Pick<WeeklyReview, 'weekStart' | 'weekEnd'> & {
-  reflection: string
+export async function getReviewsForRange(
+  from: string,
+  to: string,
+): Promise<readonly DailyReview[]> {
+  const reviews = await db.dailyReviews.where('date').between(from, to, true, true).toArray()
+  return reviews.slice().sort((a, b) => (a.date < b.date ? -1 : 1))
 }
 
-export async function saveWeeklyReview(
-  input: SaveWeeklyReviewInput,
-): Promise<WeeklyReview> {
-  const now = new Date().toISOString()
-  const existingReview = await db.weeklyReviews.where('weekStart').equals(input.weekStart).first()
-  const review: WeeklyReview = {
-    ...input,
-    id: existingReview?.id ?? createId(),
-    reflection: input.reflection.trim(),
-    createdAt: existingReview?.createdAt ?? now,
-    updatedAt: now,
-  }
-
-  await db.weeklyReviews.put(review)
-  return review
-}
-
-export async function getWeeklyReview(weekStart: string): Promise<WeeklyReview | undefined> {
-  return db.weeklyReviews.where('weekStart').equals(weekStart).first()
+export async function getAllReviews(): Promise<readonly DailyReview[]> {
+  return db.dailyReviews.toArray()
 }

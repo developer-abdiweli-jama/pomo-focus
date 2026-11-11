@@ -1,54 +1,50 @@
-import type { FocusSession } from '../../domain/models'
-import { toDateKey } from '../../lib/dates'
+import { startOfDay } from 'date-fns'
 
-export function calculateCurrentStreak(
-  sessions: FocusSession[],
-  dailyTargetMinutes: number,
-  today: string,
-): number {
-  const qualifiedDates = getQualifiedDates(sessions, dailyTargetMinutes)
-  let cursor = today
+// One day in milliseconds.
+const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000
 
-  if (!qualifiedDates.has(cursor)) {
-    cursor = shiftDateKey(cursor, -1)
-  }
-
-  let streak = 0
-  while (qualifiedDates.has(cursor)) {
-    streak += 1
-    cursor = shiftDateKey(cursor, -1)
-  }
-
-  return streak
+export interface StreakResult {
+  readonly current: number
+  readonly longest: number
 }
 
-function getQualifiedDates(sessions: FocusSession[], dailyTargetMinutes: number): Set<string> {
-  const focusByDate = new Map<string, { seconds: number; targetMinutes: number; latestStartedAt: string }>()
-
-  for (const session of sessions) {
-    if (session.status !== 'completed' && session.status !== 'cancelled') continue
-
-    const dateKey = toDateKey(new Date(session.startedAt))
-    const current = focusByDate.get(dateKey)
-    const targetMinutes = session.dailyTargetMinutes ?? dailyTargetMinutes
-    focusByDate.set(dateKey, {
-      seconds: (current?.seconds ?? 0) + session.actualDurationSeconds,
-      targetMinutes: current && current.latestStartedAt > session.startedAt ? current.targetMinutes : targetMinutes,
-      latestStartedAt: current && current.latestStartedAt > session.startedAt ? current.latestStartedAt : session.startedAt,
-    })
-  }
-
-  return new Set(
-    [...focusByDate.entries()]
-      .filter(([, focus]) => focus.seconds >= focus.targetMinutes * 60)
-      .map(([dateKey]) => dateKey),
+export function calculateStreak(
+  qualifiedDates: readonly string[],
+): StreakResult {
+  const stamps = new Set(
+    Array.from(new Set(qualifiedDates)).map(
+      (date) => startOfDay(new Date(date)).getTime(),
+    ),
   )
+
+  let longest = 0
+  let run = 0
+  let previous: number | null = null
+  for (const stamp of [...stamps].sort((a, b) => a - b)) {
+    if (previous === null || stamp === previous + MILLISECONDS_PER_DAY) {
+      run += 1
+    } else {
+      run = 1
+    }
+    if (run > longest) {
+      longest = run
+    }
+    previous = stamp
+  }
+
+  let current = 0
+  let stamp = startOfDay(new Date()).getTime()
+  while (stamps.has(stamp)) {
+    current += 1
+    stamp -= MILLISECONDS_PER_DAY
+  }
+
+  return { current, longest }
 }
 
-function shiftDateKey(dateKey: string, days: number): string {
-  const date = new Date(`${dateKey}T12:00:00`)
-  date.setDate(date.getDate() + days)
-
-  return toDateKey(date)
+export function qualifyDay(params: {
+  readonly hasCompletedSession: boolean
+  readonly hasReview: boolean
+}): boolean {
+  return params.hasCompletedSession && params.hasReview
 }
-

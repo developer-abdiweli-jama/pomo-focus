@@ -1,0 +1,24 @@
+{
+  "name": "pomo-focus",
+  "short_name": "Pomo Focus",
+  "description": "Private local-first focus coach for deep work and study sessions.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b1015",
+  "theme_color": "#0b1015",
+  "id": "/",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/icons.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "utilities"],
+  "launch_handler": {
+    "client_mode": ["navigate-existing", "focus-existing"]
+  }
+}

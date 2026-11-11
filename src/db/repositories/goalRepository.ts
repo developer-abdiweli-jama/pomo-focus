@@ -1,251 +1,131 @@
-import { db } from '../database'
-import type {
-  DailyGoal,
-  EntityId,
-  MonthlyMission,
-  NewDailyGoal,
-  NewMonthlyMission,
-  NewSubgoal,
-  Subgoal,
-} from '../../domain/models'
-import { requireDateRange, requireText } from '../../domain/validation'
-import { createId } from '../../lib/ids'
+import { addEntry, db } from '../database'
+import type { DailyGoal, MonthlyMission, Subgoal } from '../../domain/models'
+
+export async function getMonthlyMissions(): Promise<readonly MonthlyMission[]> {
+  const missions = await db.monthlyMissions.toArray()
+  return missions.slice().sort((a, b) => (a.startDate < b.startDate ? 1 : -1))
+}
 
 export async function createMonthlyMission(
-  input: NewMonthlyMission,
-): Promise<MonthlyMission> {
-  const title = requireText(input.title, 'Mission title')
-  requireDateRange(input.startDate, input.targetDate)
-
-  const mission: MonthlyMission = {
-    ...input,
-    id: createId(),
-    title,
-    description: input.description.trim(),
-    status: 'active',
-    createdAt: new Date().toISOString(),
-  }
-
-  await db.monthlyMissions.add(mission)
-  return mission
+  mission: Omit<MonthlyMission, 'id'>,
+): Promise<number> {
+  return addEntry(db.monthlyMissions, mission)
 }
 
 export async function updateMonthlyMission(
-  id: EntityId,
-  input: NewMonthlyMission,
+  id: number,
+  changes: Partial<Omit<MonthlyMission, 'id'>>,
 ): Promise<void> {
-  const title = requireText(input.title, 'Mission title')
-  requireDateRange(input.startDate, input.targetDate)
+  await db.monthlyMissions.update(id, changes)
+}
 
+export async function completeMonthlyMission(id: number): Promise<void> {
   await db.monthlyMissions.update(id, {
-    title,
-    description: input.description.trim(),
-    startDate: input.startDate,
-    targetDate: input.targetDate,
+    status: 'completed',
+    completedAt: Date.now(),
   })
 }
 
-export async function createDailyGoal(input: NewDailyGoal): Promise<DailyGoal> {
-  const goal = buildDailyGoal(input)
-
-  await db.transaction('rw', db.dailyGoals, async () => {
-    const existingGoal = await db.dailyGoals.where('date').equals(input.date).first()
-    if (existingGoal) {
-      throw new Error(`A daily goal already exists for ${input.date}.`)
-    }
-
-    await db.dailyGoals.add(goal)
-  })
-  return goal
+export async function getDailyGoals(date?: string): Promise<readonly DailyGoal[]> {
+  const goals = date
+    ? await db.dailyGoals.where('date').equals(date).toArray()
+    : await db.dailyGoals.toArray()
+  return goals.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
 }
 
-type DailyGoalWithSubgoalsInput = NewDailyGoal & {
-  subgoalTitles: string[]
+export async function getDailyGoalByDate(
+  date: string,
+): Promise<DailyGoal | null> {
+  return (await db.dailyGoals.where('date').equals(date).first()) ?? null
 }
 
-export async function createDailyGoalWithSubgoals(
-  input: DailyGoalWithSubgoalsInput,
-): Promise<{ goal: DailyGoal; subgoals: Subgoal[] }> {
-  const goal = buildDailyGoal(input)
-  const subgoals = input.subgoalTitles.map((title, index) => ({
-    id: createId(),
-    dailyGoalId: goal.id,
-    title: requireText(title, 'Subgoal title'),
-    order: index,
-    status: 'planned' as const,
-    createdAt: new Date().toISOString(),
-  }))
-
-  await db.transaction('rw', db.dailyGoals, db.subgoals, async () => {
-    const existingGoal = await db.dailyGoals.where('date').equals(input.date).first()
-    if (existingGoal) {
-      throw new Error(`A daily goal already exists for ${input.date}.`)
-    }
-
-    await db.dailyGoals.add(goal)
-    await db.subgoals.bulkAdd(subgoals)
-  })
-
-  return { goal, subgoals }
+export async function createDailyGoal(
+  goal: Omit<DailyGoal, 'id'>,
+): Promise<number> {
+  const existing = await getDailyGoalByDate(goal.date)
+  if (existing) throw new Error('This day already has a main goal. Edit or carry it forward instead.')
+  return addEntry(db.dailyGoals, goal)
 }
 
-function buildDailyGoal(input: NewDailyGoal): DailyGoal {
-  return {
-    ...input,
-    id: createId(),
-    title: requireText(input.title, 'Goal title'),
-    status: 'planned',
-    isCarryOver: false,
-    carryOverCount: 0,
-    createdAt: new Date().toISOString(),
-  }
-}
-
-export async function getGoalForDate(date: string): Promise<DailyGoal | undefined> {
-  return db.dailyGoals.where('date').equals(date).first()
-}
-
-export async function linkGoalToMission(
-  goalId: EntityId,
-  monthlyMissionId: EntityId,
+export async function updateDailyGoal(
+  id: number,
+  changes: Partial<Omit<DailyGoal, 'id'>>,
 ): Promise<void> {
-  await db.dailyGoals.update(goalId, { monthlyMissionId })
+  await db.dailyGoals.update(id, changes)
 }
 
-export async function unlinkGoalFromMission(goalId: EntityId): Promise<void> {
-  await db.dailyGoals.update(goalId, { monthlyMissionId: undefined })
-}
-
-export async function listSubgoals(dailyGoalId: EntityId): Promise<Subgoal[]> {
-  return db.subgoals.where('dailyGoalId').equals(dailyGoalId).sortBy('order')
-}
-
-export async function addSubgoal(input: NewSubgoal): Promise<Subgoal> {
-  const subgoal: Subgoal = {
-    ...input,
-    id: createId(),
-    title: requireText(input.title, 'Subgoal title'),
-    status: 'planned',
-    createdAt: new Date().toISOString(),
-  }
-
-  await db.subgoals.add(subgoal)
-  await syncDailyGoalStatus(input.dailyGoalId)
-  return subgoal
-}
-
-export async function completeSubgoal(id: EntityId): Promise<void> {
-  await toggleSubgoal(id, true)
-}
-
-export async function toggleSubgoal(
-  id: EntityId,
-  completed?: boolean,
-): Promise<void> {
-  const subgoal = await db.subgoals.get(id)
-
-  if (!subgoal) {
-    throw new Error('Cannot update a subgoal that does not exist.')
-  }
-
-  const shouldComplete = completed ?? subgoal.status !== 'completed'
-  await db.subgoals.update(id, {
-    status: shouldComplete ? 'completed' : 'planned',
-    completedAt: shouldComplete ? new Date().toISOString() : undefined,
-  })
-  await syncDailyGoalStatus(subgoal.dailyGoalId)
-}
-
-export async function updateSubgoalTitle(
-  id: EntityId,
-  title: string,
-): Promise<void> {
-  await db.subgoals.update(id, {
-    title: requireText(title, 'Subgoal title'),
-  })
-}
-
-export async function syncDailyGoalStatus(dailyGoalId: EntityId): Promise<void> {
-  const [goal, subgoals] = await Promise.all([
-    db.dailyGoals.get(dailyGoalId),
-    listSubgoals(dailyGoalId),
-  ])
-
-  if (!goal || goal.status === 'cancelled' || goal.status === 'carried_over') {
-    return
-  }
-
-  const completedCount = subgoals.filter((subgoal) => subgoal.status === 'completed').length
-  const nextStatus = subgoals.length > 0 && completedCount === subgoals.length
-    ? 'completed'
-    : completedCount > 0
-      ? 'in_progress'
-      : 'planned'
-  const nextCompletedAt = nextStatus === 'completed'
-    ? goal.completedAt ?? new Date().toISOString()
-    : undefined
-
-  if (goal.status !== nextStatus || goal.completedAt !== nextCompletedAt) {
-    await db.dailyGoals.update(dailyGoalId, {
-      status: nextStatus,
-      completedAt: nextCompletedAt,
-    })
-  }
-}
-
-export async function completeDailyGoal(id: EntityId): Promise<void> {
+export async function completeDailyGoal(id: number): Promise<void> {
   await db.dailyGoals.update(id, {
     status: 'completed',
-    completedAt: new Date().toISOString(),
+    completedAt: Date.now(),
   })
+}
+
+export async function cancelDailyGoal(id: number): Promise<void> {
+  await db.dailyGoals.update(id, { status: 'cancelled', completedAt: null })
 }
 
 export async function carryGoalForward(
-  id: EntityId,
-  newDate: string,
-): Promise<DailyGoal> {
-  const originalGoal = await db.dailyGoals.get(id)
-
-  if (!originalGoal) {
-    throw new Error('Cannot carry forward a goal that does not exist.')
+  fromDate: string,
+  toDate: string,
+): Promise<number | null> {
+  const goal = await getDailyGoalByDate(fromDate)
+  if (!goal || goal.status === 'completed' || goal.status === 'carried_over' || goal.status === 'cancelled') {
+    return null
   }
-
-  if (originalGoal.status === 'completed' || originalGoal.status === 'cancelled' || originalGoal.status === 'carried_over') {
-    throw new Error('Only an unfinished daily goal can be carried forward.')
-  }
-
-  const originalSubgoals = await listSubgoals(originalGoal.id)
-  const carriedGoal: DailyGoal = {
-    ...originalGoal,
-    id: createId(),
-    date: newDate,
-    status: 'planned',
-    isCarryOver: true,
-    carriedFromGoalId: originalGoal.id,
-    carryOverCount: originalGoal.carryOverCount + 1,
-    createdAt: new Date().toISOString(),
-    completedAt: undefined,
-  }
-  const carriedSubgoals = originalSubgoals.map((subgoal) => ({
-    ...subgoal,
-    id: createId(),
-    dailyGoalId: carriedGoal.id,
-    createdAt: new Date().toISOString(),
-    completedAt: subgoal.status === 'completed' ? subgoal.completedAt : undefined,
-  }))
-
-  await db.transaction('rw', db.dailyGoals, db.subgoals, async () => {
-    const existingGoal = await db.dailyGoals.where('date').equals(newDate).first()
-    if (existingGoal) {
-      throw new Error(`A daily goal already exists for ${newDate}.`)
+  const targetGoal = await getDailyGoalByDate(toDate)
+  if (targetGoal) return targetGoal.id
+  return db.transaction('rw', [db.dailyGoals, db.subgoals], async () => {
+    await db.dailyGoals.update(goal.id, { status: 'carried_over' })
+    const newId = await addEntry(db.dailyGoals, {
+      monthlyMissionId: goal.monthlyMissionId,
+      title: `${goal.title} (carried over)`,
+      date: toDate,
+      status: 'planned',
+      isCarryOver: true,
+      completedAt: null,
+      createdAt: Date.now(),
+    })
+    const subgoals = await getSubgoals(goal.id)
+    for (const subgoal of subgoals) {
+      await addEntry(db.subgoals, {
+        dailyGoalId: newId,
+        title: subgoal.title,
+        status: subgoal.status,
+        completedAt: subgoal.completedAt,
+        order: subgoal.order,
+      })
     }
-
-    await db.dailyGoals.update(originalGoal.id, { status: 'carried_over' })
-    await db.dailyGoals.add(carriedGoal)
-    if (carriedSubgoals.length > 0) {
-      await db.subgoals.bulkAdd(carriedSubgoals)
-    }
+    return newId
   })
+}
 
-  return carriedGoal
+export async function getSubgoals(
+  dailyGoalId: number,
+): Promise<readonly Subgoal[]> {
+  const subgoals = await db.subgoals
+    .where('dailyGoalId')
+    .equals(dailyGoalId)
+    .toArray()
+  return subgoals.slice().sort((a, b) => a.order - b.order)
+}
+
+export async function createSubgoal(
+  subgoal: Omit<Subgoal, 'id'>,
+): Promise<number> {
+  return addEntry(db.subgoals, subgoal)
+}
+
+export async function updateSubgoal(
+  id: number,
+  changes: Partial<Omit<Subgoal, 'id'>>,
+): Promise<void> {
+  await db.subgoals.update(id, changes)
+}
+
+export async function completeSubgoal(id: number): Promise<void> {
+  await db.subgoals.update(id, {
+    status: 'completed',
+    completedAt: Date.now(),
+  })
 }
