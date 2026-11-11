@@ -1,15 +1,25 @@
 import type { ReactNode } from 'react'
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useId } from 'react'
 import { X } from 'lucide-react'
 
 type DialogProps = {
   readonly open: boolean
   readonly onClose: () => void
   readonly title?: string
+  readonly description?: string
+  readonly size?: 'sm' | 'md' | 'lg'
   readonly children: ReactNode
 }
 
-export function Dialog({ open, onClose, title, children }: DialogProps) {
+const sizeClasses = {
+  sm: 'max-w-sm',
+  md: 'max-w-md',
+  lg: 'max-w-lg',
+} as const
+
+export function Dialog({ open, onClose, title, description, size = 'md', children }: DialogProps) {
+  const titleId = useId()
+  const descriptionId = useId()
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -41,18 +51,20 @@ export function Dialog({ open, onClose, title, children }: DialogProps) {
         aria-hidden="true"
       />
       <div
-        className="fixed z-50 top-1/2 left-1/2 z-[60] max-w-md w-full translate-x-[-50%] translate-y-[-50%] rounded-2xl border border-slate-700 bg-slate-900/95 p-6 shadow-2xl shadow-black/20 ring-1 ring-white/10"
+        className={`fixed left-1/2 top-1/2 z-[60] w-[calc(100vw-2rem)] ${sizeClasses[size]} max-h-[calc(100vh-2rem)] max-h-[calc(100dvh-2rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900/95 p-5 shadow-2xl shadow-black/20 ring-1 ring-white/10 sm:p-6`}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="dialog-title"
+        aria-labelledby={title ? titleId : undefined}
+        aria-describedby={description ? descriptionId : undefined}
       >
         {title && (
           <div className="mb-4 flex items-center gap-2">
-            <h2 id="dialog-title" className="text-lg font-semibold text-white">
+            <h2 id={titleId} className="text-lg font-semibold text-white">
               {title}
             </h2>
           </div>
         )}
+        {description && <p id={descriptionId} className="mb-4 text-sm leading-6 text-slate-400">{description}</p>}
         <div className="space-y-4">{children}</div>
         <button
           type="button"

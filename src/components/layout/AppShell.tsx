@@ -31,6 +31,15 @@ function AppShell({ children }: AppShellProps) {
     }
   }, [])
 
+  useEffect(() => {
+    const confirmExit = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', confirmExit)
+    return () => window.removeEventListener('beforeunload', confirmExit)
+  }, [])
+
   return (
     <div className="app-shell min-h-screen text-slate-100">
       {!isFocusMode && <header className="app-header">

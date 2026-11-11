@@ -20,7 +20,7 @@ export function ReviewPage() {
   const currentStreak = useRewardStore((state) => state.currentStreak)
   const refreshMetrics = useRewardStore((state) => state.refreshMetrics)
 
-  const [weekStart, setWeekStart] = useState(format(startOfWeek(new Date()), 'yyyy-MM-dd'))
+  const [weekDate, setWeekDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [sessions, setSessions] = useState<number>(0)
   const [focusMinutes, setFocusMinutes] = useState<number>(0)
   const [completedGoals, setCompletedGoals] = useState<number>(0)
@@ -28,10 +28,12 @@ export function ReviewPage() {
   const [distractionNotes, setDistractionNotes] = useState<string[]>([])
   const [reviewOpen, setReviewOpen] = useState(false)
   const [reflection, setReflection] = useState('')
+  const [reviewError, setReviewError] = useState('')
   const [loading, setLoading] = useState(true)
   const [dailyTarget, setDailyTarget] = useState(DEFAULT_USER_SETTINGS.dailyFocusTarget)
 
-  const weekEnd = format(endOfWeek(new Date(weekStart)), 'yyyy-MM-dd')
+  const weekStart = format(startOfWeek(new Date(`${weekDate}T12:00:00`)), 'yyyy-MM-dd')
+  const weekEnd = format(endOfWeek(new Date(`${weekDate}T12:00:00`)), 'yyyy-MM-dd')
 
   useEffect(() => {
     let mounted = true
@@ -73,10 +75,10 @@ export function ReviewPage() {
   }, [weekStart, weekEnd, refreshMetrics])
 
   const previousWeek = () => {
-    setWeekStart(format(subWeeks(new Date(weekStart), 1), 'yyyy-MM-dd'))
+    setWeekDate(format(subWeeks(new Date(`${weekDate}T12:00:00`), 1), 'yyyy-MM-dd'))
   }
   const nextWeek = () => {
-    setWeekStart(format(subWeeks(new Date(weekStart), -1), 'yyyy-MM-dd'))
+    setWeekDate(format(subWeeks(new Date(`${weekDate}T12:00:00`), -1), 'yyyy-MM-dd'))
   }
 
   const isCurrentWeek =
@@ -84,6 +86,7 @@ export function ReviewPage() {
 
   const handleSaveReview = async () => {
     if (!reflection.trim()) return
+    setReviewError('')
     try {
       await saveWeeklyReview({
         date: weekStart,
@@ -96,7 +99,7 @@ export function ReviewPage() {
       setReviewOpen(false)
       await refreshMetrics(weekStart, weekEnd)
     } catch (err) {
-      console.error(err)
+      setReviewError(err instanceof Error ? err.message : 'Could not save the weekly reflection.')
     }
   }
 
@@ -117,7 +120,7 @@ export function ReviewPage() {
         <h1 className="text-2xl font-semibold tracking-tight text-white">Weekly review</h1>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="ghost"
           onClick={previousWeek}
@@ -126,9 +129,19 @@ export function ReviewPage() {
           <ChevronLeft size={16} /> Previous week
         </Button>
         <span className="text-sm font-medium text-slate-300">
-          {format(new Date(weekStart), 'MMM d')} –{' '}
-          {format(new Date(weekEnd), 'MMM d, yyyy')}
+          {format(new Date(`${weekStart}T12:00:00`), 'MMM d')} –{' '}
+          {format(new Date(`${weekEnd}T12:00:00`), 'MMM d, yyyy')}
         </span>
+        <label className="flex items-center gap-2 text-sm text-slate-400">
+          <span>Choose week</span>
+          <input
+            type="date"
+            value={weekDate}
+            aria-label="Choose a date in the week to review"
+            onChange={(event) => event.target.value && setWeekDate(event.target.value)}
+            className="rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+        </label>
         {!isCurrentWeek && (
           <Button variant="ghost" onClick={nextWeek}>
             Next week <ChevronRight size={16} />
@@ -209,10 +222,10 @@ export function ReviewPage() {
         open={reviewOpen}
         onClose={() => setReviewOpen(false)}
         title="Weekly reflection"
+        description="Take a few minutes to reflect. Your answers are stored locally only."
+        size="md"
       >
-        <p className="text-sm text-slate-300 mb-4">
-          Take a few minutes to reflect. Your answers are stored locally only.
-        </p>
+        {reviewError && <p className="text-sm text-rose-300" role="alert">{reviewError}</p>}
         <textarea
           value={reflection}
           onChange={(e) => setReflection(e.target.value)}

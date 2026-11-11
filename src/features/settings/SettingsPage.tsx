@@ -29,7 +29,14 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [openClear, setOpenClear] = useState(false)
   const [openImport, setOpenImport] = useState(false)
+  const [importError, setImportError] = useState('')
+  const [clearError, setClearError] = useState('')
   const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)
+  const optionClass = (selected: boolean) => `rounded-xl border px-3 py-2 text-sm transition-colors ${
+    selected
+      ? 'border-emerald-400 bg-emerald-500/10 text-emerald-200'
+      : 'border-slate-700 bg-slate-950/50 text-slate-300 hover:border-slate-500'
+  }`
 
   useEffect(() => {
     let mounted = true
@@ -95,9 +102,10 @@ export function SettingsPage() {
         await importAllData(data)
         await refreshMetrics()
         setOpenImport(false)
+        setImportError('')
         setMessage({ kind: 'info', text: 'Data imported.' })
       } catch {
-        setMessage({ kind: 'error', text: 'Import failed. Invalid file.' })
+        setImportError('Import failed. Choose a valid Pomo Focus JSON backup.')
       }
     }
     reader.readAsText(file)
@@ -123,9 +131,10 @@ export function SettingsPage() {
       })
       await saveSettings(DEFAULT_USER_SETTINGS)
       setOpenClear(false)
+      setClearError('')
       setMessage({ kind: 'info', text: 'All data cleared.' })
     } catch {
-      setMessage({ kind: 'error', text: 'Clear failed.' })
+      setClearError('Could not clear data. Please try again.')
     }
   }
 
@@ -144,8 +153,8 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
+    <div className="mx-auto max-w-2xl space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Button variant="ghost" onClick={() => navigate('/')}>
           <AlertCircle size={16} className="mr-2" /> Back to today
         </Button>
@@ -168,21 +177,27 @@ export function SettingsPage() {
         <h2 className="text-sm font-semibold text-slate-200 mb-4">Session settings</h2>
         <div className="space-y-4">
           <FormField label="Focus duration (minutes)">
-            <select
-              value={[25, 50, 75].includes(settings.focusDuration) ? String(settings.focusDuration) : 'custom'}
-              onChange={(e) => setSettings({
-                ...settings,
-                focusDuration: e.target.value === 'custom' ? 60 : Number(e.target.value),
-              })}
-              className="rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            >
-              {[25, 50, 75].map((m) => (
-                <option key={m} value={String(m)}>
-                  {m} minutes
-                </option>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" aria-label="Focus duration">
+              {[25, 50, 75].map((minutes) => (
+                <button
+                  key={minutes}
+                  type="button"
+                  aria-pressed={settings.focusDuration === minutes}
+                  onClick={() => setSettings({ ...settings, focusDuration: minutes })}
+                  className={optionClass(settings.focusDuration === minutes)}
+                >
+                  {minutes} min
+                </button>
               ))}
-              <option value="custom">Custom…</option>
-            </select>
+              <button
+                type="button"
+                aria-pressed={!([25, 50, 75].includes(settings.focusDuration))}
+                onClick={() => setSettings({ ...settings, focusDuration: [25, 50, 75].includes(settings.focusDuration) ? 60 : settings.focusDuration })}
+                className={optionClass(!([25, 50, 75].includes(settings.focusDuration)))}
+              >
+                Custom
+              </button>
+            </div>
           </FormField>
           {!([25, 50, 75].includes(settings.focusDuration)) && (
             <FormField label="Custom focus duration (minutes)">
@@ -195,24 +210,24 @@ export function SettingsPage() {
                   ...settings,
                   focusDuration: Math.max(1, Number(e.target.value) || 1),
                 })}
-                className="rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full max-w-xs rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </FormField>
           )}
           <FormField label="Break duration (minutes)">
-            <select
-              value={String(settings.breakDuration)}
-              onChange={(e) =>
-                setSettings({ ...settings, breakDuration: Number(e.target.value) })
-              }
-              className="rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            >
-              {[5, 10, 15, 20].map((m) => (
-                <option key={m} value={String(m)}>
-                  {m} minutes
-                </option>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" aria-label="Break duration">
+              {[5, 10, 15, 20].map((minutes) => (
+                <button
+                  key={minutes}
+                  type="button"
+                  aria-pressed={settings.breakDuration === minutes}
+                  onClick={() => setSettings({ ...settings, breakDuration: minutes })}
+                  className={optionClass(settings.breakDuration === minutes)}
+                >
+                  {minutes} min
+                </button>
               ))}
-            </select>
+            </div>
           </FormField>
           <FormField label="Daily focus target (minutes)">
             <input
@@ -222,7 +237,7 @@ export function SettingsPage() {
               onChange={(e) =>
                 setSettings({ ...settings, dailyFocusTarget: Math.max(1, Number(e.target.value) || 1) })
               }
-              className="rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full max-w-xs rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </FormField>
           <FormField label="Sound">
@@ -239,17 +254,19 @@ export function SettingsPage() {
             </label>
           </FormField>
           <FormField label="Theme">
-            <select
-              value={settings.theme}
-              onChange={(e) =>
-                setSettings({ ...settings, theme: e.target.value as 'dark' | 'light' | 'system' })
-              }
-              className="rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            >
-              <option value="system">System</option>
-              <option value="dark">Dark</option>
-              <option value="light">Light</option>
-            </select>
+            <div className="grid grid-cols-3 gap-2" role="group" aria-label="Theme">
+              {(['system', 'dark', 'light'] as const).map((theme) => (
+                <button
+                  key={theme}
+                  type="button"
+                  aria-pressed={settings.theme === theme}
+                  onClick={() => setSettings({ ...settings, theme })}
+                  className={optionClass(settings.theme === theme)}
+                >
+                  {theme === 'system' ? 'System' : theme === 'dark' ? 'Dark' : 'Light'}
+                </button>
+              ))}
+            </div>
           </FormField>
           <Button onClick={handleSave} disabled={saving} className="w-full">
             {saving ? 'Saving…' : <><Save size={16} className="mr-2" /> Save settings</>}
@@ -260,8 +277,7 @@ export function SettingsPage() {
       <Card>
         <h2 className="text-sm font-semibold text-slate-200 mb-4">Data &amp; privacy</h2>
         <p className="text-sm text-slate-400 mb-4">
-          Your data stays on your device in IndexedDB. Export a backup or
-          restore from one at any time.
+          Your data is saved automatically on this device, so closing the app is safe. The browser may show a standard leave prompt; choose Leave to close. Export a JSON backup before clearing browser data or moving to another device.
         </p>
         <div className="space-y-2">
           <Button
@@ -273,7 +289,7 @@ export function SettingsPage() {
           </Button>
           <Button
             variant="ghost"
-            onClick={() => setOpenImport(true)}
+            onClick={() => { setImportError(''); setOpenImport(true) }}
             className="w-full justify-start"
           >
             <Upload size={16} className="mr-2" /> Import data from JSON
@@ -287,7 +303,7 @@ export function SettingsPage() {
           </Button>
           <Button
             variant="ghost"
-            onClick={() => setOpenClear(true)}
+            onClick={() => { setClearError(''); setOpenClear(true) }}
             className="w-full justify-start text-rose-400 hover:text-rose-300"
           >
             <Trash2 size={16} className="mr-2" /> Clear all data
@@ -299,20 +315,22 @@ export function SettingsPage() {
         open={openImport}
         onClose={() => setOpenImport(false)}
         title="Import data"
+        description="Choose a previously exported JSON file. Importing replaces the data currently stored on this device."
+        size="md"
       >
-        <p className="text-sm text-slate-300 mb-4">
-          Select a previously exported JSON file. This will replace all current
-          data.
-        </p>
         <input
           type="file"
           accept=".json"
           onChange={(e) => {
             const file = e.target.files?.[0]
-            if (file) handleImportFile(file)
+            if (file) {
+              setImportError('')
+              handleImportFile(file)
+            }
           }}
           className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border file:border-slate-700 file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 cursor-pointer"
         />
+        {importError && <p className="text-sm text-rose-300" role="alert">{importError}</p>}
         <div className="mt-4 flex justify-end">
           <Button variant="ghost" onClick={() => setOpenImport(false)}>
             Cancel
@@ -324,12 +342,10 @@ export function SettingsPage() {
         open={openClear}
         onClose={() => setOpenClear(false)}
         title="Clear all data"
+        description="This permanently deletes every goal, session, distraction, review, and milestone stored on this device. It cannot be undone without an exported backup."
+        size="sm"
       >
-        <p className="text-sm text-slate-300 mb-4">
-          This permanently deletes every goal, session, distraction, review,
-          and milestone on this device. It cannot be undone unless you have an
-          exported backup.
-        </p>
+        {clearError && <p className="text-sm text-rose-300" role="alert">{clearError}</p>}
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="ghost" onClick={() => setOpenClear(false)}>
             Cancel

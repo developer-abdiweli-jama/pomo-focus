@@ -15,7 +15,13 @@ const todayIso = format(new Date(), 'yyyy-MM-dd')
 export function GoalPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const selectedDate = searchParams.get('date') ?? todayIso
+  const requestedDate = searchParams.get('date')
+  const selectedDate = requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)
+    ? requestedDate
+    : todayIso
+  const selectedDateLabel = selectedDate === todayIso
+    ? 'Today'
+    : format(new Date(`${selectedDate}T12:00:00`), 'EEEE, MMMM d')
   const monthlyMissions = useGoalStore((state) => state.monthlyMissions)
   const dailyGoals = useGoalStore((state) => state.dailyGoals)
   const subgoals = useGoalStore((state) => state.subgoals)
@@ -46,6 +52,10 @@ export function GoalPage() {
   const [error, setError] = useState('')
   const [editTitle, setEditTitle] = useState('')
   const [editDialogOpen, setEditDialogOpen] = useState(false)
+
+  useEffect(() => {
+    setMissionTarget(selectedDate)
+  }, [selectedDate])
 
   const todayGoals = dailyGoals.filter((g) => g.date === selectedDate)
   const todayGoal = todayGoals[0]
@@ -145,23 +155,36 @@ export function GoalPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-white">Goals</h1>
-          <p className="mt-1 text-sm text-slate-400">
-            Plan your month, set today&apos;s main goal, and break it into
-            subgoals.
-          </p>
+      <header className="space-y-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-white">Goals</h1>
+            <p className="mt-1 text-sm text-slate-400">
+              Plan your month, set a daily goal, and break it into subgoals.
+            </p>
+          </div>
+          <FormField label="Plan for date">
+            <input
+              type="date"
+              value={selectedDate}
+              aria-label="Plan for date"
+              onChange={(event) => {
+                const date = event.target.value
+                if (date) navigate(date === todayIso ? '/goals' : `/goals?date=${date}`)
+              }}
+              className="w-full rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 sm:w-auto"
+            />
+          </FormField>
         </div>
-        <div className="flex gap-2">
-          <Button onClick={() => setOpenMissionDialog(true)}>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => { setError(''); setOpenMissionDialog(true) }}>
             <Plus size={16} className="mr-2" /> Monthly mission
           </Button>
-          <Button variant="secondary" onClick={() => setOpenGoalDialog(true)}>
-            <Plus size={16} className="mr-2" /> Today&apos;s goal
+          <Button variant="secondary" onClick={() => { setError(''); setOpenGoalDialog(true) }}>
+            <Plus size={16} className="mr-2" /> Goal for {selectedDateLabel}
           </Button>
         </div>
-      </div>
+      </header>
 
       {error && (
         <div className="rounded-lg bg-rose-500/10 border border-rose-500/30 p-3 text-xs text-rose-300">
@@ -211,7 +234,7 @@ export function GoalPage() {
       <Card>
         <div className="flex items-center gap-2 mb-4">
           <CheckCircle2 size={16} className="text-sky-400" />
-          <h2 className="text-sm font-semibold text-slate-200">Today&apos;s main goal</h2>
+          <h2 className="text-sm font-semibold text-slate-200">Main goal · {selectedDateLabel}</h2>
         </div>
         {todayGoal ? (
           <div className="space-y-3">
@@ -269,7 +292,7 @@ export function GoalPage() {
             <div className="mt-4 flex gap-2">
               {canUpdateGoal && (
                 <>
-                  <Button onClick={() => { setEditTitle(todayGoal.title); setEditDialogOpen(true) }} variant="secondary">
+                  <Button onClick={() => { setError(''); setEditTitle(todayGoal.title); setEditDialogOpen(true) }} variant="secondary">
                     <Pencil size={15} className="mr-2" /> Edit goal
                   </Button>
                   <Button onClick={handleCompleteGoal} variant="secondary">
@@ -292,7 +315,7 @@ export function GoalPage() {
             <p className="text-sm text-slate-500">No main goal for today.</p>
             <Button
               variant="secondary"
-              onClick={() => setOpenGoalDialog(true)}
+              onClick={() => { setError(''); setOpenGoalDialog(true) }}
               className="mt-3"
             >
               <Plus size={16} className="mr-2" /> Create today&apos;s goal
@@ -302,7 +325,7 @@ export function GoalPage() {
       </Card>
 
       {/* Dialogs */}
-      <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} title="Edit main goal">
+      <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} title="Edit main goal" description="Make the result you want to finish today clear." size="sm">
         <form onSubmit={handleEditGoal} className="space-y-4">
           <FormField label="Title" required>
             <input
@@ -312,6 +335,7 @@ export function GoalPage() {
               className="rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200 w-full"
             />
           </FormField>
+          {error && <p className="text-sm text-rose-300" role="alert">{error}</p>}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" type="button" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
             <Button type="submit" disabled={!validateGoalTitle(editTitle).ok}>Save goal</Button>
@@ -319,7 +343,7 @@ export function GoalPage() {
         </form>
       </Dialog>
 
-      <Dialog open={openMissionDialog} onClose={() => setOpenMissionDialog(false)} title="Create monthly mission">
+      <Dialog open={openMissionDialog} onClose={() => setOpenMissionDialog(false)} title="Create monthly mission" description="Choose a meaningful outcome and the date you want to reach it." size="md">
         <form onSubmit={handleCreateMission} className="space-y-4">
           <FormField label="Title" required error={missionTitle && !validateGoalTitle(missionTitle).ok ? 'Title must be specific (5+ chars)' : undefined}>
             <input
@@ -341,11 +365,14 @@ export function GoalPage() {
           <FormField label="Target date">
             <input
               type="date"
+              required
               value={missionTarget}
+              min={selectedDate}
               onChange={(e) => setMissionTarget(e.target.value)}
               className="rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 w-full"
             />
           </FormField>
+          {error && <p className="text-sm text-rose-300" role="alert">{error}</p>}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" type="button" onClick={() => setOpenMissionDialog(false)}>
               Cancel
@@ -355,7 +382,7 @@ export function GoalPage() {
         </form>
       </Dialog>
 
-      <Dialog open={openGoalDialog} onClose={() => setOpenGoalDialog(false)} title="Create today&apos;s main goal">
+      <Dialog open={openGoalDialog} onClose={() => setOpenGoalDialog(false)} title={`Create goal for ${selectedDateLabel.toLowerCase()}`} description="Choose one clear result to focus on for the selected date." size="md">
         <form onSubmit={handleCreateGoal} className="space-y-4">
           <FormField label="Title" required error={goalTitle && !validateGoalTitle(goalTitle).ok ? 'Be specific — describe what done looks like' : undefined}>
             <input
@@ -380,6 +407,7 @@ export function GoalPage() {
               ))}
             </select>
           </FormField>
+          {error && <p className="text-sm text-rose-300" role="alert">{error}</p>}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" type="button" onClick={() => setOpenGoalDialog(false)}>
               Cancel

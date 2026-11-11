@@ -8,6 +8,7 @@ export interface TimerStore {
   readonly plannedDuration: number // minutes
   readonly sessionId: number | null
   readonly pausedAt: number | null // ms since epoch; internal, keeps elapsed accurate across pauses
+  readonly activeBreak: { readonly startedAt: number; readonly endAt: number; readonly duration: number } | null
   start: (plannedDuration: number, sessionId: number, startedAt?: number) => void
   restore: (session: {
     id: number
@@ -21,10 +22,36 @@ export interface TimerStore {
   pause: (pausedAt?: number) => void
   resume: (resumedAt?: number) => void
   tick: () => number // elapsed ms computed from timestamps
+  startBreak: (duration: number, startedAt?: number) => void
+  clearBreak: () => void
   reset: () => void
 }
 
 const MILLISECONDS_PER_MINUTE = 60_000
+const BREAK_STORAGE_KEY = 'pomo-focus-active-break'
+
+function readActiveBreak(): TimerStore['activeBreak'] {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.localStorage.getItem(BREAK_STORAGE_KEY)
+    if (!raw) return null
+    const value = JSON.parse(raw) as { startedAt?: unknown; endAt?: unknown; duration?: unknown }
+    if (typeof value.startedAt !== 'number' || typeof value.endAt !== 'number' || typeof value.duration !== 'number') return null
+    return { startedAt: value.startedAt, endAt: value.endAt, duration: value.duration }
+  } catch {
+    return null
+  }
+}
+
+function writeActiveBreak(activeBreak: TimerStore['activeBreak']) {
+  if (typeof window === 'undefined') return
+  try {
+    if (activeBreak) window.localStorage.setItem(BREAK_STORAGE_KEY, JSON.stringify(activeBreak))
+    else window.localStorage.removeItem(BREAK_STORAGE_KEY)
+  } catch {
+    // The break remains available for this page session if browser storage is unavailable.
+  }
+}
 
 export const useTimerStore = create<TimerStore>((set, get) => ({
   isRunning: false,
@@ -34,6 +61,7 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
   plannedDuration: 0,
   sessionId: null,
   pausedAt: null,
+  activeBreak: readActiveBreak(),
 
   start: (plannedDuration, sessionId, startTime = Date.now()) => {
     set({
@@ -108,7 +136,19 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
     return 0
   },
 
+  startBreak: (duration, startedAt = Date.now()) => {
+    const activeBreak = { startedAt, endAt: startedAt + duration * MILLISECONDS_PER_MINUTE, duration }
+    writeActiveBreak(activeBreak)
+    set({ activeBreak })
+  },
+
+  clearBreak: () => {
+    writeActiveBreak(null)
+    set({ activeBreak: null })
+  },
+
   reset: () => {
+    writeActiveBreak(null)
     set({
       isRunning: false,
       isPaused: false,
@@ -117,6 +157,7 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
       plannedDuration: 0,
       sessionId: null,
       pausedAt: null,
+      activeBreak: null,
     })
   },
 }))

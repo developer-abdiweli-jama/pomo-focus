@@ -39,6 +39,10 @@ export async function getDailyGoalByDate(
   return (await db.dailyGoals.where('date').equals(date).first()) ?? null
 }
 
+export async function getDailyGoalById(id: number): Promise<DailyGoal | null> {
+  return (await db.dailyGoals.get(id)) ?? null
+}
+
 export async function createDailyGoal(
   goal: Omit<DailyGoal, 'id'>,
 ): Promise<number> {

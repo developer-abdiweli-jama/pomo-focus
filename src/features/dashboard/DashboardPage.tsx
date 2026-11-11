@@ -12,7 +12,16 @@ import { getSettings, DEFAULT_USER_SETTINGS } from '../../db/repositories/settin
 import { getDailyGoals } from '../../db/repositories/goalRepository'
 import { getReview, saveDailyReview } from '../../db/repositories/reviewRepository'
 import { countDistractionsForRange } from '../../db/repositories/distractionRepository'
-import { getSessionsForRange } from '../../db/repositories/sessionRepository'
+import { getActiveSession, getSessionsForRange } from '../../db/repositories/sessionRepository'
+import { getDailyGoalById } from '../../db/repositories/goalRepository'
+import { useTimerStore } from '../timer/timer.store'
+import type { FocusSession } from '../../domain/models'
+
+function formatTime(seconds: number) {
+  const minutes = Math.floor(seconds / 60)
+  const remainder = seconds % 60
+  return `${minutes}:${remainder.toString().padStart(2, '0')}`
+}
 
 export function DashboardPage() {
   const navigate = useNavigate()
@@ -24,6 +33,10 @@ export function DashboardPage() {
   const currentStreak = useRewardStore((state) => state.currentStreak)
   const totalFocusMinutes = useRewardStore((state) => state.totalFocusMinutes)
   const refreshMetrics = useRewardStore((state) => state.refreshMetrics)
+  const activeBreak = useTimerStore((state) => state.activeBreak)
+  const [activeSession, setActiveSession] = useState<FocusSession | null>(null)
+  const [activeSessionGoal, setActiveSessionGoal] = useState('')
+  const [clockNow, setClockNow] = useState(Date.now())
   const [dailyTarget, setDailyTarget] = useState(DEFAULT_USER_SETTINGS.dailyFocusTarget)
   const [allDailyGoals, setAllDailyGoals] = useState(dailyGoals)
   const [dailyReflection, setDailyReflection] = useState('')
@@ -33,14 +46,26 @@ export function DashboardPage() {
   useEffect(() => {
     const today = format(new Date(), 'yyyy-MM-dd')
     void refreshMetrics(today, today)
-    void Promise.all([getDailyGoals(), getSettings(), getReview(today)])
-      .then(([goals, settings, review]) => {
+    void Promise.all([getDailyGoals(), getSettings(), getReview(today), getActiveSession()])
+      .then(([goals, settings, review, session]) => {
         setAllDailyGoals(goals)
         setDailyTarget(settings?.dailyFocusTarget ?? DEFAULT_USER_SETTINGS.dailyFocusTarget)
         setDailyReflection(review?.reflection ?? '')
+        setActiveSession(session)
+        if (session) {
+          void getDailyGoalById(session.dailyGoalId).then((sessionGoal) => {
+            setActiveSessionGoal(sessionGoal?.title ?? 'Focus session')
+          })
+        }
       })
       .catch(() => setAllDailyGoals([]))
   }, [refreshMetrics])
+
+  useEffect(() => {
+    if (!activeBreak && !activeSession) return
+    const interval = window.setInterval(() => setClockNow(Date.now()), 1000)
+    return () => window.clearInterval(interval)
+  }, [activeBreak, activeSession])
 
   const mission = monthlyMissions[0]
   const goal = selectedDailyGoal ?? dailyGoals[0]
@@ -56,6 +81,18 @@ export function DashboardPage() {
     : missionGoals.length > 0
       ? Math.round((missionGoals.filter((dailyGoal) => dailyGoal.status === 'completed').length / missionGoals.length) * 100)
       : 0
+  const sessionRemainingMs = activeSession
+    ? Math.max(0, activeSession.plannedEndAt - (activeSession.pausedAt ?? clockNow))
+    : 0
+  const sessionProgress = activeSession
+    ? Math.min(100, Math.max(0, (1 - sessionRemainingMs / (activeSession.plannedDuration * 60_000)) * 100))
+    : 0
+  const breakRemaining = activeBreak
+    ? Math.max(0, Math.ceil((activeBreak.endAt - clockNow) / 1000))
+    : 0
+  const breakProgress = activeBreak
+    ? Math.min(100, Math.max(0, (1 - (activeBreak.endAt - clockNow) / (activeBreak.duration * 60_000)) * 100))
+    : 0
 
   const handleStartFocus = () => {
     if (!goal) {
@@ -105,6 +142,39 @@ export function DashboardPage() {
           Choose one task, then give it your attention.
         </p>
       </header>
+
+      {(activeBreak || activeSession) && (
+        <Card className="mb-4 border-sky-400/25 bg-linear-to-br from-sky-500/10 via-slate-900/90 to-slate-900 p-5 sm:p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 flex-1">
+              <div className="mb-2 flex items-center gap-2 text-sm font-medium text-sky-300">
+                <Clock3 size={17} />
+                <span>{activeBreak ? 'Break in progress' : activeSession?.pausedAt ? 'Focus session paused' : 'Focus session in progress'}</span>
+              </div>
+              <h2 className="break-words text-xl font-semibold text-white">
+                {activeBreak ? 'Take a moment to reset' : activeSessionGoal || 'Focus session'}
+              </h2>
+              <p className="mt-1 text-sm text-slate-400">
+                {activeBreak
+                  ? breakRemaining > 0 ? `${formatTime(breakRemaining)} remaining` : 'Break time is up. Return when you’re ready.'
+                  : activeSession?.pausedAt ? `${formatTime(Math.ceil(sessionRemainingMs / 1000))} left · paused` : `${formatTime(Math.ceil(sessionRemainingMs / 1000))} remaining`}
+              </p>
+              <div className="mt-3 max-w-xl">
+                <ProgressBar value={activeBreak ? breakProgress : sessionProgress} />
+              </div>
+              {!activeBreak && activeSession && (
+                <p className="mt-2 text-xs text-slate-500">{Math.round(sessionProgress)}% of {activeSession.plannedDuration} minutes</p>
+              )}
+            </div>
+            <Button
+              className="shrink-0"
+              onClick={() => navigate(activeBreak ? `/focus?break=1${activeSession ? `&goalId=${activeSession.dailyGoalId}` : ''}` : `/focus?goalId=${activeSession?.dailyGoalId ?? ''}`)}
+            >
+              {activeBreak ? 'Return to break' : 'Open session'}
+            </Button>
+          </div>
+        </Card>
+      )}
 
       <Card className="border-emerald-400/20 bg-linear-to-br from-emerald-500/10 via-slate-900/90 to-slate-900 p-6 sm:p-8">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
@@ -220,10 +290,13 @@ export function DashboardPage() {
 
       {isLoading && <p className="mt-4 text-sm text-slate-500">Loading your goals…</p>}
 
-      <Dialog open={dailyReviewOpen} onClose={() => setDailyReviewOpen(false)} title="Daily reflection">
-        <p className="mb-4 text-sm text-slate-300">
-          What helped you focus today? What would you like to adjust tomorrow?
-        </p>
+      <Dialog
+        open={dailyReviewOpen}
+        onClose={() => setDailyReviewOpen(false)}
+        title="Daily reflection"
+        description="What helped you focus today? What would you like to adjust tomorrow?"
+        size="md"
+      >
         <textarea
           value={dailyReflection}
           onChange={(event) => setDailyReflection(event.target.value)}

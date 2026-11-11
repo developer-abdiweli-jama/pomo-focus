@@ -40,12 +40,15 @@ export function FocusPage() {
   const plannedEndAt = useTimerStore((state) => state.plannedEndAt)
   const plannedDuration = useTimerStore((state) => state.plannedDuration)
   const sessionId = useTimerStore((state) => state.sessionId)
+  const activeBreak = useTimerStore((state) => state.activeBreak)
   const start = useTimerStore((state) => state.start)
   const pause = useTimerStore((state) => state.pause)
   const resume = useTimerStore((state) => state.resume)
   const reset = useTimerStore((state) => state.reset)
   const restore = useTimerStore((state) => state.restore)
   const extend = useTimerStore((state) => state.extend)
+  const startBreak = useTimerStore((state) => state.startBreak)
+  const clearBreak = useTimerStore((state) => state.clearBreak)
 
   const createDailyGoal = useGoalStore((state) => state.createDailyGoal)
   const subgoals = useGoalStore((state) => state.subgoals)
@@ -58,7 +61,6 @@ export function FocusPage() {
   const [secondsLeft, setSecondsLeft] = useState(0)
   const [focusDuration, setFocusDuration] = useState(DEFAULT_DURATION_MINUTES)
   const [breakDuration, setBreakDuration] = useState(DEFAULT_BREAK_DURATION_MINUTES)
-  const [breakEndAt, setBreakEndAt] = useState<number | null>(null)
   const [breakSeconds, setBreakSeconds] = useState(0)
   const [selectedSubgoalId, setSelectedSubgoalId] = useState<number | null>(null)
   const [soundEnabled, setSoundEnabled] = useState(DEFAULT_USER_SETTINGS.soundEnabled)
@@ -145,7 +147,7 @@ export function FocusPage() {
         if (useTimerStore.getState().sessionId === null) restore(activeSession)
         setSelectedSubgoalId(activeSession.subgoalId)
         setSecondsLeft(Math.max(0, Math.ceil((activeSession.plannedEndAt - (activeSession.pausedAt ?? Date.now())) / 1000)))
-        if (activeSession.pausedAt !== null && activeSession.plannedEndAt <= activeSession.pausedAt) {
+        if (!useTimerStore.getState().activeBreak && activeSession.pausedAt !== null && activeSession.plannedEndAt <= activeSession.pausedAt) {
           setSessionEnded(true)
         }
       }
@@ -156,12 +158,22 @@ export function FocusPage() {
   }, [restore])
 
   useEffect(() => {
-    if (!breakOpen || breakEndAt === null) return
-    const updateBreak = () => setBreakSeconds(Math.max(0, Math.ceil((breakEndAt - Date.now()) / 1000)))
+    if (!activeBreak) {
+      setBreakSeconds(0)
+      return
+    }
+    const updateBreak = () => setBreakSeconds(Math.max(0, Math.ceil((activeBreak.endAt - Date.now()) / 1000)))
     updateBreak()
     const timer = window.setInterval(updateBreak, 250)
     return () => window.clearInterval(timer)
-  }, [breakOpen, breakEndAt])
+  }, [activeBreak])
+
+  useEffect(() => {
+    if (activeBreak) {
+      setSessionEnded(false)
+      setBreakOpen(true)
+    }
+  }, [activeBreak])
 
   useEffect(() => {
     return () => {
@@ -284,8 +296,7 @@ export function FocusPage() {
   }
 
   const handleBreak = () => {
-    const endAt = Date.now() + breakDuration * 60_000
-    setBreakEndAt(endAt)
+    startBreak(breakDuration)
     setBreakSeconds(breakDuration * 60)
     setBreakOpen(true)
     setSessionEnded(false)
@@ -315,9 +326,9 @@ export function FocusPage() {
     }
   }
 
-  const handleSaveBreak = () => {
+  const handleFinishBreak = () => {
     setBreakOpen(false)
-    setBreakEndAt(null)
+    clearBreak()
     setBreakSeconds(0)
   }
 
@@ -342,6 +353,20 @@ export function FocusPage() {
         </Button>
         <h1 className="text-2xl font-semibold tracking-tight text-white">Focus session</h1>
       </div>
+
+      {activeBreak && !breakOpen && (
+        <Card className="border-sky-400/25 bg-sky-500/5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <p className="font-medium text-sky-300">Break is still running · {formatTime(breakSeconds)} left</p>
+              <div className="mt-3">
+                <ProgressBar value={Math.min(100, Math.max(0, (1 - (activeBreak.endAt - Date.now()) / (activeBreak.duration * 60_000)) * 100))} />
+              </div>
+            </div>
+            <Button variant="secondary" onClick={() => setBreakOpen(true)}>Open break timer</Button>
+          </div>
+        </Card>
+      )}
 
       {error && (
         <div className="rounded-lg bg-rose-500/10 border border-rose-500/30 p-3 text-xs text-rose-300">
@@ -406,7 +431,7 @@ export function FocusPage() {
           <div className="mt-8 grid gap-3 lg:grid-cols-3">
             <Button
               onClick={() => { void (isPaused ? persistResume() : persistPause()) }}
-              disabled={!isRunning && sessionId === null}
+              disabled={Boolean(activeBreak) || (!isRunning && sessionId === null)}
               className="px-8 py-3"
             >
               {isPaused ? (
@@ -433,6 +458,7 @@ export function FocusPage() {
                 if (isRunning) void persistPause()
                 setDistractionOpen(true)
               }}
+              disabled={Boolean(activeBreak)}
               className="px-8 py-3 border-rose-500/30 text-rose-400 hover:bg-rose-500/10 hover:text-rose-300"
             >
               <PhoneOff size={20} className="mr-2" /> I got distracted
@@ -459,11 +485,9 @@ export function FocusPage() {
         open={sessionEnded}
         onClose={() => setSessionEnded(false)}
         title="Session complete"
+        description="The timer has reached zero. Choose what you want to do next; breaks never start automatically."
+        size="sm"
       >
-        <p className="text-sm text-slate-300 mb-6">
-          The timer has reached zero. What would you like to do next? The break
-          will not start automatically — you&apos;re in control.
-        </p>
         <div className="grid gap-2">
           <Button onClick={handleContinue} className="px-4 py-3">
             <Clock size={18} className="mr-2" /> Continue focusing
@@ -482,11 +506,9 @@ export function FocusPage() {
         open={distractionOpen}
         onClose={() => setDistractionOpen(false)}
         title="Distraction noted"
+        description="The timer is paused. Add a short note, then resume when you’re ready."
+        size="md"
       >
-        <p className="text-sm text-slate-300 mb-4">
-          The timer is paused. Briefly note what pulled your attention away, then
-          resume when you&apos;re ready.
-        </p>
         <textarea
           value={distractionNote}
           onChange={(e) => setDistractionNote(e.target.value)}
@@ -510,14 +532,21 @@ export function FocusPage() {
       </Dialog>
 
       {/* Break dialog */}
-      <Dialog open={breakOpen} onClose={() => setBreakOpen(false)} title="Break time">
+      <Dialog
+        open={breakOpen}
+        onClose={() => setBreakOpen(false)}
+        title="Break time"
+        description="Closing this window keeps the break running. End it when you’re ready to return to focus."
+        size="sm"
+      >
         <p className="text-sm text-slate-300 mb-4">
           {breakSeconds > 0
             ? `Take a break. ${formatTime(breakSeconds)} remaining.`
-            : 'Your break time is up. Resume focus when you’re ready.'}
+            : 'Your break time is up. End the break when you’re ready to return to focus.'}
         </p>
-        <div className="flex justify-end">
-          <Button onClick={handleSaveBreak}>{breakSeconds > 0 ? 'End break' : 'Break complete'}</Button>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button variant="ghost" onClick={() => setBreakOpen(false)}>Keep break running</Button>
+          <Button onClick={handleFinishBreak}>{breakSeconds > 0 ? 'End break and return' : 'Finish break'}</Button>
         </div>
       </Dialog>
     </div>
