@@ -46,7 +46,7 @@ function AppShell({ children }: AppShellProps) {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-5 lg:px-8">
           <div>
             <div className="flex items-center gap-3">
-              <span className="brand-mark" aria-hidden="true" />
+              <img src="/brand-mark.svg" className="brand-mark" alt="" />
               <p className="text-lg font-semibold tracking-tight text-white">
                 Pomo Focus
               </p>

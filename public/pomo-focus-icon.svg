@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="background" x1="56" y1="34" x2="456" y2="492" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#172936"/>
+      <stop offset="1" stop-color="#091116"/>
+    </linearGradient>
+    <linearGradient id="dial" x1="125" y1="401" x2="378" y2="139" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#48E2B0"/>
+      <stop offset=".58" stop-color="#D5FFF2"/>
+      <stop offset="1" stop-color="#A895FF"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="matrix(0 290 -290 0 360 160)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#39CFA0" stop-opacity=".24"/>
+      <stop offset="1" stop-color="#39CFA0" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="softGlow" x="73" y="86" width="366" height="366" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#background)"/>
+  <circle cx="360" cy="160" r="220" fill="url(#glow)"/>
+  <circle cx="256" cy="278" r="158" stroke="#7EF1CD" stroke-opacity=".16" stroke-width="58" filter="url(#softGlow)"/>
+  <circle cx="256" cy="278" r="158" stroke="url(#dial)" stroke-linecap="round" stroke-width="38" stroke-dasharray="748 245" transform="rotate(-48 256 278)"/>
+  <path d="M231 92h50a12 12 0 0 1 12 12v23H219v-23a12 12 0 0 1 12-12Z" fill="#A895FF"/>
+  <path d="M256 278V181" stroke="#E9FFF8" stroke-linecap="round" stroke-width="19"/>
+  <path d="m256 278 75 57" stroke="#79E9C1" stroke-linecap="round" stroke-width="19"/>
+  <circle cx="256" cy="278" r="24" fill="#F3FFF9"/>
+  <circle cx="256" cy="278" r="9" fill="#10B981"/>
+  <circle cx="375" cy="163" r="10" fill="#C5B8FF"/>
+</svg>

@@ -39,12 +39,10 @@ button { cursor: pointer; }
 
 .brand-mark {
   display: block;
-  width: 22px;
-  height: 16px;
-  border: 1px solid #6ee7b7;
-  border-radius: 5px;
-  box-shadow: 4px 4px 0 -1px #a78bfa, 4px 4px 0 0 rgba(167, 139, 250, 0.45);
-  transform: skewY(-8deg);
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 8px rgba(52, 211, 153, 0.22));
 }
 
 .avatar {

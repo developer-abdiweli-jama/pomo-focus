@@ -1,7 +1,7 @@
 {
-  "name": "pomo-focus",
+  "name": "Pomo Focus — Focus with intention",
   "short_name": "Pomo Focus",
-  "description": "Private local-first focus coach for deep work and study sessions.",
+  "description": "A calmer Pomodoro timer and goal planner for intentional focus.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
@@ -11,10 +11,28 @@
   "scope": "/",
   "icons": [
     {
-      "src": "/icons.svg",
+      "src": "/pomo-focus-icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "categories": ["productivity", "utilities"],
