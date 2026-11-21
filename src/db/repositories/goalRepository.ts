@@ -36,7 +36,10 @@ export async function getDailyGoals(date?: string): Promise<readonly DailyGoal[]
 export async function getDailyGoalByDate(
   date: string,
 ): Promise<DailyGoal | null> {
-  return (await db.dailyGoals.where('date').equals(date).first()) ?? null
+  const goals = await db.dailyGoals.where('date').equals(date).toArray()
+  return goals
+    .filter((goal) => goal.status !== 'cancelled')
+    .sort((a, b) => b.createdAt - a.createdAt)[0] ?? null
 }
 
 export async function getDailyGoalById(id: number): Promise<DailyGoal | null> {
@@ -47,7 +50,7 @@ export async function createDailyGoal(
   goal: Omit<DailyGoal, 'id'>,
 ): Promise<number> {
   const existing = await getDailyGoalByDate(goal.date)
-  if (existing) throw new Error('This day already has a main goal. Edit or carry it forward instead.')
+  if (existing) throw new Error('This day already has an active main goal. Edit or carry it forward instead.')
   return addEntry(db.dailyGoals, goal)
 }
 

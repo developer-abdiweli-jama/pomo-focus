@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Play, Pause, SkipForward, PhoneOff, Flag, X, Clock } from 'lucide-react'
+import { Play, Pause, SkipForward, PhoneOff, Flag, X, Clock, PictureInPicture2 } from 'lucide-react'
 import { useTimerStore } from './timer.store'
+import { isFloatingTimerSupported, useFloatingTimerStore } from './floatingTimer.store'
 import { useGoalStore } from '../goals/goal.store'
 import {
   createFocusSession,
@@ -55,6 +56,7 @@ export function FocusPage() {
   const selectedDailyGoal = useGoalStore((state) => state.selectedDailyGoal)
 
   const [sessionEnded, setSessionEnded] = useState(false)
+  const [finishEarlyOpen, setFinishEarlyOpen] = useState(false)
   const [distractionOpen, setDistractionOpen] = useState(false)
   const [distractionNote, setDistractionNote] = useState('')
   const [breakOpen, setBreakOpen] = useState(false)
@@ -65,6 +67,9 @@ export function FocusPage() {
   const [selectedSubgoalId, setSelectedSubgoalId] = useState<number | null>(null)
   const [soundEnabled, setSoundEnabled] = useState(DEFAULT_USER_SETTINGS.soundEnabled)
   const [error, setError] = useState('')
+  const pipWindow = useFloatingTimerStore((state) => state.window)
+  const pipError = useFloatingTimerStore((state) => state.error)
+  const openFloatingTimer = useFloatingTimerStore((state) => state.open)
 
   const frameRef = useRef<number | null>(null)
 
@@ -184,19 +189,17 @@ export function FocusPage() {
   const startSession = useCallback(async () => {
     setError('')
     let active
-    let settings
     try {
-      ;[active, settings] = await Promise.all([getActiveSession(), getSettings()])
+      active = await getActiveSession()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load session settings')
+      setError(err instanceof Error ? err.message : 'Could not load active session')
       return
     }
     if (active) {
       restore(active)
       return
     }
-    const duration = settings?.focusDuration ?? DEFAULT_USER_SETTINGS.focusDuration
-    setFocusDuration(duration)
+    const duration = focusDuration
     const now = Date.now()
     let dailyGoalId = goalId
 
@@ -236,7 +239,7 @@ export function FocusPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start session')
     }
-  }, [goalId, createDailyGoal, start, navigate, restore, selectedSubgoalId])
+  }, [goalId, createDailyGoal, start, navigate, restore, selectedSubgoalId, focusDuration])
 
   // Keyboard shortcuts: Space to start/pause, Escape to close open dialogs.
   // Ignored while typing in an input/textarea.
@@ -259,13 +262,14 @@ export function FocusPage() {
       }
       if (event.key === 'Escape') {
         if (sessionEnded) setSessionEnded(false)
+        if (finishEarlyOpen) setFinishEarlyOpen(false)
         if (distractionOpen) setDistractionOpen(false)
         if (breakOpen) setBreakOpen(false)
       }
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [sessionId, isPaused, isRunning, sessionEnded, distractionOpen, breakOpen, startSession, persistPause, persistResume])
+  }, [sessionId, isPaused, isRunning, sessionEnded, finishEarlyOpen, distractionOpen, breakOpen, startSession, persistPause, persistResume])
 
   const endCurrentSession = useCallback(async () => {
     if (!sessionId) return
@@ -381,10 +385,27 @@ export function FocusPage() {
           </div>
           <h2 className="mt-6 text-xl font-semibold text-white">Ready to focus</h2>
           <p className="mt-3 max-w-xs mx-auto text-sm text-slate-400">
-            Start a {focusDuration}-minute session on your current
-            goal. The timer survives refreshes and laptop sleep.
+            Choose a length for this session, then focus on your current goal.
           </p>
           <div className="mt-8">
+            <div className="mx-auto mb-5 max-w-sm">
+              <p className="mb-2 text-left text-sm font-medium text-slate-300">Session length</p>
+              <div className="grid grid-cols-4 gap-2" role="group" aria-label="Focus session length">
+                {[25, 50, 75].map((minutes) => (
+                  <button key={minutes} type="button" aria-pressed={focusDuration === minutes} onClick={() => setFocusDuration(minutes)} className={`rounded-xl border px-2 py-2 text-sm ${focusDuration === minutes ? 'border-emerald-400 bg-emerald-500/10 text-emerald-200' : 'border-slate-700 text-slate-300 hover:border-slate-500'}`}>
+                    {minutes} min
+                  </button>
+                ))}
+                <button type="button" aria-pressed={!([25, 50, 75].includes(focusDuration))} onClick={() => setFocusDuration([25, 50, 75].includes(focusDuration) ? 60 : focusDuration)} className={`rounded-xl border px-2 py-2 text-sm ${!([25, 50, 75].includes(focusDuration)) ? 'border-emerald-400 bg-emerald-500/10 text-emerald-200' : 'border-slate-700 text-slate-300 hover:border-slate-500'}`}>
+                  Custom
+                </button>
+              </div>
+              {!([25, 50, 75].includes(focusDuration)) && (
+                <label className="mt-3 block text-left text-xs text-slate-400">Custom minutes
+                  <input type="number" min="1" max="300" value={focusDuration} onChange={(event) => setFocusDuration(Math.max(1, Math.min(300, Number(event.target.value) || 1)))} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200" />
+                </label>
+              )}
+            </div>
             {subgoals.length > 0 && (
               <div className="mx-auto mb-4 max-w-sm text-left">
                 <label htmlFor="focus-subgoal" className="mb-1.5 block text-sm font-medium text-slate-300">Focus subgoal (optional)</label>
@@ -446,11 +467,11 @@ export function FocusPage() {
             </Button>
             <Button
               variant="secondary"
-              onClick={handleSessionEnd}
-              disabled={!isRunning}
+              onClick={() => setFinishEarlyOpen(true)}
+              disabled={sessionId === null}
               className="px-8 py-3"
             >
-              <SkipForward size={20} className="mr-2" /> End session
+              <SkipForward size={20} className="mr-2" /> Finish early
             </Button>
             <Button
               variant="ghost"
@@ -464,6 +485,20 @@ export function FocusPage() {
               <PhoneOff size={20} className="mr-2" /> I got distracted
             </Button>
           </div>
+
+          {sessionId !== null && (
+            <div className="mt-4 flex flex-col items-center gap-2">
+              {isFloatingTimerSupported() ? (
+                <Button variant="ghost" onClick={() => void openFloatingTimer()} disabled={Boolean(pipWindow)}>
+                  <PictureInPicture2 size={18} className="mr-2" />
+                  {pipWindow ? 'Timer floating above other windows' : 'Float timer above other windows'}
+                </Button>
+              ) : (
+                <p className="text-xs text-slate-500">Floating timer is not supported by this browser.</p>
+              )}
+              {pipError && <p className="text-xs text-rose-300" role="alert">{pipError}</p>}
+            </div>
+          )}
 
           <div className="mt-8 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
             <div className="flex items-center justify-between mb-2">
@@ -481,6 +516,19 @@ export function FocusPage() {
       )}
 
       {/* Session ended decision (break is not automatic) */}
+      <Dialog
+        open={finishEarlyOpen}
+        onClose={() => setFinishEarlyOpen(false)}
+        title="Finish this session early?"
+        description={`Your session will be saved with ${formatTime(Math.max(0, plannedDuration * 60 - secondsLeft))} of focus time. You can keep focusing if you prefer.`}
+        size="sm"
+      >
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setFinishEarlyOpen(false)}>Keep focusing</Button>
+          <Button onClick={() => { setFinishEarlyOpen(false); void endCurrentSession() }}>Finish session</Button>
+        </div>
+      </Dialog>
+
       <Dialog
         open={sessionEnded}
         onClose={() => setSessionEnded(false)}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { BookOpen, ChevronRight, Clock3, Target } from 'lucide-react'
+import { BookOpen, ChevronRight, Clock3, Pencil, Target } from 'lucide-react'
 import { format } from 'date-fns'
 import { useGoalStore } from '../goals/goal.store'
 import { useRewardStore } from '../rewards/reward.store'
@@ -16,6 +16,7 @@ import { getActiveSession, getSessionsForRange } from '../../db/repositories/ses
 import { getDailyGoalById } from '../../db/repositories/goalRepository'
 import { useTimerStore } from '../timer/timer.store'
 import type { FocusSession } from '../../domain/models'
+import { validateGoalTitle } from '../../domain/validation'
 
 function formatTime(seconds: number) {
   const minutes = Math.floor(seconds / 60)
@@ -29,6 +30,7 @@ export function DashboardPage() {
   const dailyGoals = useGoalStore((state) => state.dailyGoals)
   const subgoals = useGoalStore((state) => state.subgoals)
   const selectedDailyGoal = useGoalStore((state) => state.selectedDailyGoal)
+  const loadToday = useGoalStore((state) => state.loadToday)
   const isLoading = useGoalStore((state) => state.isLoading)
   const currentStreak = useRewardStore((state) => state.currentStreak)
   const totalFocusMinutes = useRewardStore((state) => state.totalFocusMinutes)
@@ -42,9 +44,15 @@ export function DashboardPage() {
   const [dailyReflection, setDailyReflection] = useState('')
   const [dailyReviewOpen, setDailyReviewOpen] = useState(false)
   const [dailyReviewError, setDailyReviewError] = useState('')
+  const [goalEditOpen, setGoalEditOpen] = useState(false)
+  const [goalEditTitle, setGoalEditTitle] = useState('')
+  const [goalEditError, setGoalEditError] = useState('')
+  const editDailyGoal = useGoalStore((state) => state.editDailyGoal)
+  const todayDate = format(new Date(), 'yyyy-MM-dd')
 
   useEffect(() => {
-    const today = format(new Date(), 'yyyy-MM-dd')
+    const today = todayDate
+    void loadToday(today)
     void refreshMetrics(today, today)
     void Promise.all([getDailyGoals(), getSettings(), getReview(today), getActiveSession()])
       .then(([goals, settings, review, session]) => {
@@ -59,7 +67,7 @@ export function DashboardPage() {
         }
       })
       .catch(() => setAllDailyGoals([]))
-  }, [refreshMetrics])
+  }, [loadToday, refreshMetrics, todayDate])
 
   useEffect(() => {
     if (!activeBreak && !activeSession) return
@@ -67,8 +75,15 @@ export function DashboardPage() {
     return () => window.clearInterval(interval)
   }, [activeBreak, activeSession])
 
-  const mission = monthlyMissions[0]
-  const goal = selectedDailyGoal ?? dailyGoals[0]
+  const activeMissions = monthlyMissions.filter((item) => item.status !== 'completed' && item.status !== 'cancelled')
+  const mission = activeMissions.find((item) => item.startDate <= todayDate && item.targetDate >= todayDate)
+    ?? activeMissions.filter((item) => item.startDate <= todayDate).slice().sort((a, b) => a.targetDate.localeCompare(b.targetDate))[0]
+    ?? activeMissions.filter((item) => item.startDate > todayDate).slice().sort((a, b) => a.startDate.localeCompare(b.startDate))[0]
+    ?? monthlyMissions[0]
+    ?? null
+  const goal = (selectedDailyGoal?.date === todayDate && selectedDailyGoal.status !== 'cancelled'
+    ? selectedDailyGoal
+    : null) ?? allDailyGoals.find((dailyGoal) => dailyGoal.date === todayDate && dailyGoal.status !== 'cancelled') ?? null
   const goalSubgoals = goal
     ? subgoals.filter((subgoal) => subgoal.dailyGoalId === goal.id)
     : []
@@ -126,6 +141,22 @@ export function DashboardPage() {
       setDailyReviewOpen(false)
     } catch (err) {
       setDailyReviewError(err instanceof Error ? err.message : 'Could not save daily review')
+    }
+  }
+
+  const handleSaveGoalEdit = async () => {
+    if (!goal) return
+    const validation = validateGoalTitle(goalEditTitle)
+    if (!validation.ok) {
+      setGoalEditError(validation.reason ?? 'Please enter a clear goal.')
+      return
+    }
+    try {
+      await editDailyGoal(goal.id, goalEditTitle)
+      setGoalEditOpen(false)
+      setGoalEditError('')
+    } catch (err) {
+      setGoalEditError(err instanceof Error ? err.message : 'Could not update goal')
     }
   }
 
@@ -210,8 +241,8 @@ export function DashboardPage() {
               {goal ? 'Start focus' : 'Create today’s goal'}
             </Button>
             {goal && (
-              <Button variant="secondary" onClick={() => navigate('/goals')} disabled={isLoading}>
-                Edit goal
+              <Button variant="secondary" onClick={() => { setGoalEditTitle(goal.title); setGoalEditError(''); setGoalEditOpen(true) }} disabled={isLoading}>
+                <Pencil size={15} className="mr-2" /> Edit goal
               </Button>
             )}
           </div>
@@ -289,6 +320,29 @@ export function DashboardPage() {
       </details>
 
       {isLoading && <p className="mt-4 text-sm text-slate-500">Loading your goals…</p>}
+
+      <Dialog
+        open={goalEditOpen}
+        onClose={() => setGoalEditOpen(false)}
+        title="Edit today’s goal"
+        description="Update the goal you want to work toward today."
+        size="sm"
+      >
+        <label className="mb-1.5 block text-sm font-medium text-slate-300" htmlFor="dashboard-goal-title">Goal</label>
+        <input
+          id="dashboard-goal-title"
+          autoFocus
+          value={goalEditTitle}
+          onChange={(event) => setGoalEditTitle(event.target.value)}
+          onKeyDown={(event) => { if (event.key === 'Enter') void handleSaveGoalEdit() }}
+          className="w-full rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200"
+        />
+        {goalEditError && <p className="mt-2 text-sm text-rose-300" role="alert">{goalEditError}</p>}
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setGoalEditOpen(false)}>Cancel</Button>
+          <Button onClick={() => void handleSaveGoalEdit()} disabled={!validateGoalTitle(goalEditTitle).ok}>Save goal</Button>
+        </div>
+      </Dialog>
 
       <Dialog
         open={dailyReviewOpen}

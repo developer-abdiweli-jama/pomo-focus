@@ -26,6 +26,7 @@ export function GoalPage() {
   const dailyGoals = useGoalStore((state) => state.dailyGoals)
   const subgoals = useGoalStore((state) => state.subgoals)
   const createMission = useGoalStore((state) => state.createMission)
+  const editMission = useGoalStore((state) => state.editMission)
   const createDailyGoal = useGoalStore((state) => state.createDailyGoal)
   const addSubgoal = useGoalStore((state) => state.addSubgoal)
   const toggleSubgoal = useGoalStore((state) => state.toggleSubgoal)
@@ -46,6 +47,11 @@ export function GoalPage() {
   const [missionTitle, setMissionTitle] = useState('')
   const [missionDesc, setMissionDesc] = useState('')
   const [missionTarget, setMissionTarget] = useState(todayIso)
+  const [editMissionId, setEditMissionId] = useState<number | null>(null)
+  const [editMissionTitle, setEditMissionTitle] = useState('')
+  const [editMissionDesc, setEditMissionDesc] = useState('')
+  const [editMissionStart, setEditMissionStart] = useState(todayIso)
+  const [editMissionTarget, setEditMissionTarget] = useState(todayIso)
   const [goalTitle, setGoalTitle] = useState('')
   const [goalMissionId, setGoalMissionId] = useState<number | null>(null)
   const [subgoalTitle, setSubgoalTitle] = useState('')
@@ -81,6 +87,32 @@ export function GoalPage() {
       setError(
         err instanceof Error ? err.message : 'Failed to create mission',
       )
+    }
+  }
+
+  const openMissionEditor = (mission: (typeof monthlyMissions)[number]) => {
+    setError('')
+    setEditMissionId(mission.id)
+    setEditMissionTitle(mission.title)
+    setEditMissionDesc(mission.description)
+    setEditMissionStart(mission.startDate)
+    setEditMissionTarget(mission.targetDate)
+  }
+
+  const handleEditMission = async (event: FormEvent) => {
+    event.preventDefault()
+    if (editMissionId === null) return
+    setError('')
+    try {
+      await editMission(editMissionId, {
+        title: editMissionTitle,
+        description: editMissionDesc,
+        startDate: editMissionStart,
+        targetDate: editMissionTarget,
+      })
+      setEditMissionId(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update mission')
     }
   }
 
@@ -218,6 +250,9 @@ export function GoalPage() {
                 }`}>
                   {mission.status === 'completed' ? 'Completed' : 'Active'}
                 </span>
+                <Button variant="ghost" onClick={() => openMissionEditor(mission)} aria-label={`Edit mission ${mission.title}`}>
+                  <Pencil size={14} className="mr-1" /> Edit
+                </Button>
                 {mission.status !== 'completed' && (
                   <Button variant="ghost" onClick={() => void completeMission(mission.id)} aria-label={`Complete mission ${mission.title}`}>
                     <Flag size={14} className="mr-1" /> Complete
@@ -245,9 +280,11 @@ export function GoalPage() {
                   ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                   : todayGoal.status === 'in_progress'
                     ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-                    : 'bg-slate-800/50 text-slate-400 border border-slate-700/40'
+                    : todayGoal.status === 'cancelled'
+                      ? 'bg-slate-800/50 text-slate-500 border border-slate-700/40'
+                      : 'bg-slate-800/50 text-slate-400 border border-slate-700/40'
               }`}>
-                {todayGoal.status === 'completed' ? 'Completed' : todayGoal.status === 'in_progress' ? 'In progress' : 'Planned'}
+                {todayGoal.status === 'completed' ? 'Completed' : todayGoal.status === 'in_progress' ? 'In progress' : todayGoal.status === 'cancelled' ? 'Cancelled' : 'Planned'}
               </span>
             </div>
             {todayGoal.isCarryOver && (
@@ -259,8 +296,9 @@ export function GoalPage() {
                   <button
                     key={subgoal.id}
                     type="button"
+                    disabled={!canUpdateGoal}
                     className="w-full flex items-center justify-between gap-3 rounded-lg border border-slate-700/60 bg-slate-900/50 px-3 py-2 text-left transition-colors hover:border-emerald-500/40"
-                    onClick={() => toggleSubgoal(subgoal.id)}
+                    onClick={() => { if (canUpdateGoal) void toggleSubgoal(subgoal.id) }}
                   >
                     <span className={`text-sm ${subgoal.status === 'completed' ? 'text-emerald-400 line-through' : 'text-slate-400'}`}>
                       {subgoal.title}
@@ -276,25 +314,30 @@ export function GoalPage() {
                 <p className="text-sm text-slate-500">No subgoals yet.</p>
               )}
             </div>
+            {canUpdateGoal && (
+              <div className="mt-4 flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Add a subgoal…"
+                  value={subgoalTitle}
+                  onChange={(e) => setSubgoalTitle(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddSubgoal()}
+                  className="flex-1 rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <Button onClick={handleAddSubgoal} disabled={!subgoalTitle.trim()}>
+                  <Plus size={16} className="mr-2" /> Add
+                </Button>
+              </div>
+            )}
+            {todayGoal.status === 'cancelled' && <p className="text-xs text-slate-500">This goal is cancelled and kept in your history. Create a new goal for this date when you’re ready.</p>}
             <div className="mt-4 flex gap-2">
-              <input
-                type="text"
-                placeholder="Add a subgoal…"
-                value={subgoalTitle}
-                onChange={(e) => setSubgoalTitle(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddSubgoal()}
-                className="flex-1 rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-              <Button onClick={handleAddSubgoal} disabled={!subgoalTitle.trim()}>
-                <Plus size={16} className="mr-2" /> Add
-              </Button>
-            </div>
-            <div className="mt-4 flex gap-2">
+              {todayGoal.status !== 'cancelled' && (
+                <Button onClick={() => { setError(''); setEditTitle(todayGoal.title); setEditDialogOpen(true) }} variant="secondary">
+                  <Pencil size={15} className="mr-2" /> Edit goal
+                </Button>
+              )}
               {canUpdateGoal && (
                 <>
-                  <Button onClick={() => { setError(''); setEditTitle(todayGoal.title); setEditDialogOpen(true) }} variant="secondary">
-                    <Pencil size={15} className="mr-2" /> Edit goal
-                  </Button>
                   <Button onClick={handleCompleteGoal} variant="secondary">
                     Mark goal complete
                   </Button>
@@ -378,6 +421,40 @@ export function GoalPage() {
               Cancel
             </Button>
             <Button type="submit" disabled={isLoading}>Create mission</Button>
+          </div>
+        </form>
+      </Dialog>
+
+      <Dialog open={editMissionId !== null} onClose={() => setEditMissionId(null)} title="Edit monthly mission" description="Correct the mission title, details, or dates. Daily goals linked to this mission will stay connected." size="md">
+        <form onSubmit={handleEditMission} className="space-y-4">
+          <FormField label="Title" required error={editMissionTitle && !validateGoalTitle(editMissionTitle).ok ? 'Title must be specific (5+ chars)' : undefined}>
+            <input
+              type="text"
+              value={editMissionTitle}
+              onChange={(event) => setEditMissionTitle(event.target.value)}
+              className="w-full rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200"
+            />
+          </FormField>
+          <FormField label="Description">
+            <textarea
+              value={editMissionDesc}
+              onChange={(event) => setEditMissionDesc(event.target.value)}
+              rows={3}
+              className="w-full rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200"
+            />
+          </FormField>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField label="Start date">
+              <input type="date" required value={editMissionStart} onChange={(event) => setEditMissionStart(event.target.value)} className="w-full rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200" />
+            </FormField>
+            <FormField label="Target date">
+              <input type="date" required min={editMissionStart} value={editMissionTarget} onChange={(event) => setEditMissionTarget(event.target.value)} className="w-full rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-200" />
+            </FormField>
+          </div>
+          {error && <p className="text-sm text-rose-300" role="alert">{error}</p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" type="button" onClick={() => setEditMissionId(null)}>Cancel</Button>
+            <Button type="submit" disabled={!validateGoalTitle(editMissionTitle).ok || editMissionTarget < editMissionStart}>Save mission</Button>
           </div>
         </form>
       </Dialog>

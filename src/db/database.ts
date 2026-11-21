@@ -73,6 +73,27 @@ export class PomoFocusDatabase extends Dexie {
       milestones: '++id, type, value, title, achievedAt',
       userSettings: '++id, focusDuration, breakDuration, dailyFocusTarget, soundEnabled, theme',
     })
+    this.version(4).stores({
+      monthlyMissions: '++id, title, startDate, targetDate, status, createdAt, completedAt',
+      dailyGoals: '++id, monthlyMissionId, title, date, status, isCarryOver, completedAt, createdAt',
+      subgoals: '++id, dailyGoalId, title, status, completedAt, order',
+      focusSessions:
+        '++id, subgoalId, startedAt, endedAt, plannedDuration, actualDuration, status, [dailyGoalId+startedAt]',
+      distractions: '++id, sessionId, note, occurredAt',
+      dailyReviews:
+        '++id, date, reflection, completedGoal, focusMinutes, distractionCount, [date+id]',
+      weeklyReviews:
+        '++id, date, reflection, completedGoal, focusMinutes, distractionCount, [date+id]',
+      milestones: '++id, type, value, title, achievedAt',
+      userSettings: '++id, focusDuration, breakDuration, dailyFocusTarget, soundEnabled, theme',
+    }).upgrade(async (transaction) => {
+      await transaction.table('weeklyReviews').toCollection().modify((review) => {
+        review.wins ??= ''
+        review.challenges ??= ''
+        review.adjustment ??= ''
+        review.nextPriority ??= ''
+      })
+    })
   }
 }
 

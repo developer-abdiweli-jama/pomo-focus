@@ -20,6 +20,12 @@ export interface GoalStore {
     readonly startDate: string
     readonly targetDate: string
   }) => Promise<number>
+  editMission: (id: number, input: {
+    readonly title: string
+    readonly description: string
+    readonly startDate: string
+    readonly targetDate: string
+  }) => Promise<void>
   createDailyGoal: (input: {
     readonly title: string
     readonly monthlyMissionId: number | null
@@ -59,7 +65,7 @@ export const useGoalStore = create<GoalStore>((set, get) => ({
 
   loadToday: async (date = format(new Date(), 'yyyy-MM-dd')) => {
     const goals = await goalRepository.getDailyGoals(date)
-    const selected = goals.length > 0 ? goals[0] : null
+    const selected = goals.find((goal) => goal.status !== 'cancelled') ?? null
     set({ dailyGoals: goals, selectedDailyGoal: selected, subgoals: [] })
     if (selected) {
       const subgoals = await goalRepository.getSubgoals(selected.id)
@@ -85,6 +91,21 @@ export const useGoalStore = create<GoalStore>((set, get) => ({
     })
     await get().loadMissions()
     return id
+  },
+
+  editMission: async (id, input) => {
+    const validation = validateGoalTitle(input.title)
+    if (!validation.ok) throw new Error(validation.reason ?? 'Invalid mission title')
+    if (!input.startDate || !input.targetDate || input.targetDate < input.startDate) {
+      throw new Error('Target date must be on or after the start date.')
+    }
+    await goalRepository.updateMonthlyMission(id, {
+      title: input.title.trim(),
+      description: input.description.trim(),
+      startDate: input.startDate,
+      targetDate: input.targetDate,
+    })
+    await get().loadMissions()
   },
 
   createDailyGoal: async (input) => {

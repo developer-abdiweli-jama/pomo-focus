@@ -72,6 +72,10 @@ export interface DailyReview {
 
 export interface WeeklyReview extends Omit<DailyReview, 'id'> {
   readonly id: number
+  readonly wins?: string
+  readonly challenges?: string
+  readonly adjustment?: string
+  readonly nextPriority?: string
 }
 
 export interface Milestone {

@@ -1,7 +1,7 @@
 {
-  "name": "Pomo Focus — Focus with intention",
-  "short_name": "Pomo Focus",
-  "description": "A calmer Pomodoro timer and goal planner for intentional focus.",
+  "name": "FocusSpan — Focus with intention",
+  "short_name": "FocusSpan",
+  "description": "A private focus timer, daily goal planner, and weekly reflection space.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",

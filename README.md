@@ -1,4 +1,4 @@
-# Pomo Focus
+# FocusSpan
 
 A local-first Pomodoro and goal planning app. Goals, focus sessions, distractions, reviews, and settings are stored in the browser with IndexedDB. There is no account or backend.
 

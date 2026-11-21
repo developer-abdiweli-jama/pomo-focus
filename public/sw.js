@@ -1,5 +1,5 @@
 const SHELL = '/'
-const CACHE_NAME = 'pomo-focus-shell-v4'
+const CACHE_NAME = 'pomo-focus-shell-v5'
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -11,7 +11,7 @@ self.addEventListener('install', (event) => {
         .map((match) => match[1])
         .filter((url) => url.startsWith('/') && !url.startsWith('//'))
       await cache.addAll([...new Set([...assetUrls, '/manifest.json', '/favicon.svg', '/brand-mark.svg', '/pomo-focus-icon.svg', '/pwa-192.png', '/pwa-512.png', '/apple-touch-icon.png', '/og-image.png'])])
-    }),
+    }).then(() => self.skipWaiting()),
   )
 })
 

@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import Navigation from './Navigation'
 import { getSettings, DEFAULT_USER_SETTINGS } from '../../db/repositories/settingsRepository'
+import { FloatingTimerOverlay } from '../../features/timer/FloatingTimerOverlay'
 
 type AppShellProps = {
   readonly children?: ReactNode
@@ -42,13 +43,14 @@ function AppShell({ children }: AppShellProps) {
 
   return (
     <div className="app-shell min-h-screen text-slate-100">
+      <FloatingTimerOverlay />
       {!isFocusMode && <header className="app-header">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-5 lg:px-8">
           <div>
             <div className="flex items-center gap-3">
               <img src="/brand-mark.svg" className="brand-mark" alt="" />
               <p className="text-lg font-semibold tracking-tight text-white">
-                Pomo Focus
+                FocusSpan
               </p>
             </div>
             <p className="mt-1 pl-9 text-xs tracking-wide text-slate-500">

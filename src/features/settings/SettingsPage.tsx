@@ -83,7 +83,7 @@ export function SettingsPage() {
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
-      anchor.download = `pomo-focus-export-${new Date().toISOString().slice(0, 10)}.json`
+      anchor.download = `focusspan-export-${new Date().toISOString().slice(0, 10)}.json`
       document.body.appendChild(anchor)
       anchor.click()
       document.body.removeChild(anchor)
@@ -105,7 +105,7 @@ export function SettingsPage() {
         setImportError('')
         setMessage({ kind: 'info', text: 'Data imported.' })
       } catch {
-        setImportError('Import failed. Choose a valid Pomo Focus JSON backup.')
+        setImportError('Import failed. Choose a valid FocusSpan JSON backup.')
       }
     }
     reader.readAsText(file)
