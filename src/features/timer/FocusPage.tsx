@@ -14,7 +14,7 @@ import {
 } from '../../db/repositories/sessionRepository'
 import { saveDistraction } from '../../db/repositories/distractionRepository'
 import { getSettings, DEFAULT_USER_SETTINGS } from '../../db/repositories/settingsRepository'
-import { getDailyGoalByDate } from '../../db/repositories/goalRepository'
+import { getDailyGoalByDate, markDailyGoalInProgress } from '../../db/repositories/goalRepository'
 import { format } from 'date-fns'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
@@ -51,7 +51,6 @@ export function FocusPage() {
   const startBreak = useTimerStore((state) => state.startBreak)
   const clearBreak = useTimerStore((state) => state.clearBreak)
 
-  const createDailyGoal = useGoalStore((state) => state.createDailyGoal)
   const subgoals = useGoalStore((state) => state.subgoals)
   const selectedDailyGoal = useGoalStore((state) => state.selectedDailyGoal)
 
@@ -70,6 +69,7 @@ export function FocusPage() {
   const pipWindow = useFloatingTimerStore((state) => state.window)
   const pipError = useFloatingTimerStore((state) => state.error)
   const openFloatingTimer = useFloatingTimerStore((state) => state.open)
+  const closeFloatingTimer = useFloatingTimerStore((state) => state.close)
 
   const frameRef = useRef<number | null>(null)
 
@@ -143,12 +143,14 @@ export function FocusPage() {
 
   useEffect(() => {
     let cancelled = false
-    void Promise.all([getActiveSession(), getSettings()]).then(([activeSession, settings]) => {
+    void Promise.all([getActiveSession(), getSettings()]).then(async ([activeSession, settings]) => {
       if (cancelled) return
       setBreakDuration(settings?.breakDuration ?? DEFAULT_USER_SETTINGS.breakDuration)
       setFocusDuration(settings?.focusDuration ?? DEFAULT_USER_SETTINGS.focusDuration)
       setSoundEnabled(settings?.soundEnabled ?? DEFAULT_USER_SETTINGS.soundEnabled)
       if (activeSession) {
+        await markDailyGoalInProgress(activeSession.dailyGoalId)
+        if (cancelled) return
         if (useTimerStore.getState().sessionId === null) restore(activeSession)
         setSelectedSubgoalId(activeSession.subgoalId)
         setSecondsLeft(Math.max(0, Math.ceil((activeSession.plannedEndAt - (activeSession.pausedAt ?? Date.now())) / 1000)))
@@ -164,20 +166,12 @@ export function FocusPage() {
 
   useEffect(() => {
     if (!activeBreak) {
-      setBreakSeconds(0)
       return
     }
     const updateBreak = () => setBreakSeconds(Math.max(0, Math.ceil((activeBreak.endAt - Date.now()) / 1000)))
     updateBreak()
     const timer = window.setInterval(updateBreak, 250)
     return () => window.clearInterval(timer)
-  }, [activeBreak])
-
-  useEffect(() => {
-    if (activeBreak) {
-      setSessionEnded(false)
-      setBreakOpen(true)
-    }
   }, [activeBreak])
 
   useEffect(() => {
@@ -206,15 +200,12 @@ export function FocusPage() {
     if (!dailyGoalId) {
       const today = format(new Date(), 'yyyy-MM-dd')
       try {
-        dailyGoalId = await createDailyGoal({
-          title: `Focus session ${format(new Date(), 'HH:mm')}`,
-          monthlyMissionId: null,
-          date: today,
-        }).catch(async (err: unknown) => {
-          const existing = await getDailyGoalByDate(today)
-          if (existing) return existing.id
-          throw err
-        })
+        const existing = await getDailyGoalByDate(today)
+        if (!existing) {
+          setError('Create a daily goal before starting a focus session.')
+          return
+        }
+        dailyGoalId = existing.id
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Could not create session')
         return
@@ -239,7 +230,7 @@ export function FocusPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start session')
     }
-  }, [goalId, createDailyGoal, start, navigate, restore, selectedSubgoalId, focusDuration])
+  }, [goalId, start, navigate, restore, selectedSubgoalId, focusDuration])
 
   // Keyboard shortcuts: Space to start/pause, Escape to close open dialogs.
   // Ignored while typing in an input/textarea.
@@ -364,7 +355,7 @@ export function FocusPage() {
             <div className="min-w-0 flex-1">
               <p className="font-medium text-sky-300">Break is still running · {formatTime(breakSeconds)} left</p>
               <div className="mt-3">
-                <ProgressBar value={Math.min(100, Math.max(0, (1 - (activeBreak.endAt - Date.now()) / (activeBreak.duration * 60_000)) * 100))} />
+              <ProgressBar value={Math.min(100, Math.max(0, (1 - breakSeconds / (activeBreak.duration * 60)) * 100))} />
               </div>
             </div>
             <Button variant="secondary" onClick={() => setBreakOpen(true)}>Open break timer</Button>
@@ -489,12 +480,20 @@ export function FocusPage() {
           {sessionId !== null && (
             <div className="mt-4 flex flex-col items-center gap-2">
               {isFloatingTimerSupported() ? (
-                <Button variant="ghost" onClick={() => void openFloatingTimer()} disabled={Boolean(pipWindow)}>
-                  <PictureInPicture2 size={18} className="mr-2" />
-                  {pipWindow ? 'Timer floating above other windows' : 'Float timer above other windows'}
-                </Button>
+                pipWindow ? (
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <span className="text-xs text-emerald-300">Timer stays above other tabs and windows while this FocusSpan tab is open.</span>
+                    <Button variant="ghost" onClick={closeFloatingTimer}>
+                      <X size={16} className="mr-2" /> Close floating timer
+                    </Button>
+                  </div>
+                ) : (
+                  <Button variant="ghost" onClick={() => void openFloatingTimer()}>
+                    <PictureInPicture2 size={18} className="mr-2" /> Float timer above other windows
+                  </Button>
+                )
               ) : (
-                <p className="text-xs text-slate-500">Floating timer is not supported by this browser.</p>
+                <p className="text-xs text-slate-500">Floating timer needs a desktop browser with Document Picture-in-Picture support, such as Chrome or Edge.</p>
               )}
               {pipError && <p className="text-xs text-rose-300" role="alert">{pipError}</p>}
             </div>
@@ -520,7 +519,7 @@ export function FocusPage() {
         open={finishEarlyOpen}
         onClose={() => setFinishEarlyOpen(false)}
         title="Finish this session early?"
-        description={`Your session will be saved with ${formatTime(Math.max(0, plannedDuration * 60 - secondsLeft))} of focus time. You can keep focusing if you prefer.`}
+        description={`Your session will be saved with ${formatTime(Math.max(0, plannedDuration * 60 - secondsLeft))} of focus time. This cannot be undone. Keep focusing if you prefer.`}
         size="sm"
       >
         <div className="flex justify-end gap-2">
@@ -533,7 +532,7 @@ export function FocusPage() {
         open={sessionEnded}
         onClose={() => setSessionEnded(false)}
         title="Session complete"
-        description="The timer has reached zero. Choose what you want to do next; breaks never start automatically."
+        description="The timer has reached zero. Choosing “Finish for now” saves this session and cannot be undone. You can continue focusing or take a break instead."
         size="sm"
       >
         <div className="grid gap-2">

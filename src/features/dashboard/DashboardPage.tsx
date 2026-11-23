@@ -38,7 +38,7 @@ export function DashboardPage() {
   const activeBreak = useTimerStore((state) => state.activeBreak)
   const [activeSession, setActiveSession] = useState<FocusSession | null>(null)
   const [activeSessionGoal, setActiveSessionGoal] = useState('')
-  const [clockNow, setClockNow] = useState(Date.now())
+  const [clockNow, setClockNow] = useState(0)
   const [dailyTarget, setDailyTarget] = useState(DEFAULT_USER_SETTINGS.dailyFocusTarget)
   const [allDailyGoals, setAllDailyGoals] = useState(dailyGoals)
   const [dailyReflection, setDailyReflection] = useState('')
@@ -81,9 +81,17 @@ export function DashboardPage() {
     ?? activeMissions.filter((item) => item.startDate > todayDate).slice().sort((a, b) => a.startDate.localeCompare(b.startDate))[0]
     ?? monthlyMissions[0]
     ?? null
-  const goal = (selectedDailyGoal?.date === todayDate && selectedDailyGoal.status !== 'cancelled'
+  const goal = (selectedDailyGoal?.date === todayDate && selectedDailyGoal.status !== 'cancelled' && selectedDailyGoal.status !== 'carried_over' && !selectedDailyGoal.isCarryOver
     ? selectedDailyGoal
-    : null) ?? allDailyGoals.find((dailyGoal) => dailyGoal.date === todayDate && dailyGoal.status !== 'cancelled') ?? null
+    : null) ?? allDailyGoals.find((dailyGoal) => dailyGoal.date === todayDate && dailyGoal.status !== 'cancelled' && dailyGoal.status !== 'carried_over' && !dailyGoal.isCarryOver)
+      ?? allDailyGoals.find((dailyGoal) => dailyGoal.date === todayDate && dailyGoal.status !== 'cancelled' && dailyGoal.status !== 'carried_over') ?? null
+  const carriedGoals = allDailyGoals.filter(
+    (dailyGoal) =>
+      dailyGoal.date === todayDate &&
+      dailyGoal.isCarryOver &&
+      dailyGoal.status !== 'cancelled' &&
+      dailyGoal.status !== 'carried_over',
+  )
   const goalSubgoals = goal
     ? subgoals.filter((subgoal) => subgoal.dailyGoalId === goal.id)
     : []
@@ -269,6 +277,26 @@ export function DashboardPage() {
           </details>
         )}
       </Card>
+
+      {carriedGoals.length > 0 && (
+        <details className="mt-4 rounded-xl border border-slate-700/50 bg-slate-900/50 px-5 py-4">
+          <summary className="cursor-pointer list-none text-sm font-medium text-slate-300 marker:hidden">
+            Carried over <span className="ml-1 text-slate-500">{carriedGoals.length}</span>
+          </summary>
+          <ul className="mt-3 space-y-2">
+            {carriedGoals.map((carriedGoal) => (
+              <li key={carriedGoal.id} className="flex items-center justify-between gap-3 text-sm">
+                <span className={carriedGoal.status === 'completed' ? 'text-slate-500 line-through' : 'text-slate-300'}>
+                  {carriedGoal.title}
+                </span>
+                <span className="shrink-0 text-xs text-slate-500">
+                  {carriedGoal.status === 'completed' ? 'Completed' : 'In progress'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
 
       <details className="mt-4 rounded-xl border border-slate-700/50 bg-slate-900/50 px-5 py-4">
         <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-slate-300 marker:hidden">

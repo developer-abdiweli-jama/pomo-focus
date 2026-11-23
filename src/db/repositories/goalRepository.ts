@@ -38,8 +38,8 @@ export async function getDailyGoalByDate(
 ): Promise<DailyGoal | null> {
   const goals = await db.dailyGoals.where('date').equals(date).toArray()
   return goals
-    .filter((goal) => goal.status !== 'cancelled')
-    .sort((a, b) => b.createdAt - a.createdAt)[0] ?? null
+    .filter((goal) => goal.status !== 'cancelled' && goal.status !== 'carried_over')
+    .sort((a, b) => Number(a.isCarryOver) - Number(b.isCarryOver) || b.createdAt - a.createdAt)[0] ?? null
 }
 
 export async function getDailyGoalById(id: number): Promise<DailyGoal | null> {
@@ -49,8 +49,14 @@ export async function getDailyGoalById(id: number): Promise<DailyGoal | null> {
 export async function createDailyGoal(
   goal: Omit<DailyGoal, 'id'>,
 ): Promise<number> {
-  const existing = await getDailyGoalByDate(goal.date)
-  if (existing) throw new Error('This day already has an active main goal. Edit or carry it forward instead.')
+  const existing = await db.dailyGoals
+    .where('date')
+    .equals(goal.date)
+    .filter((dailyGoal) =>
+      !dailyGoal.isCarryOver && dailyGoal.status !== 'cancelled' && dailyGoal.status !== 'carried_over',
+    )
+    .first()
+  if (existing) throw new Error('This day already has a main goal. Edit it instead.')
   return addEntry(db.dailyGoals, goal)
 }
 
@@ -59,6 +65,14 @@ export async function updateDailyGoal(
   changes: Partial<Omit<DailyGoal, 'id'>>,
 ): Promise<void> {
   await db.dailyGoals.update(id, changes)
+}
+
+export async function markDailyGoalInProgress(id: number): Promise<void> {
+  const goal = await db.dailyGoals.get(id)
+  if (!goal) return
+  if (goal.status === 'planned') {
+    await db.dailyGoals.update(id, { status: 'in_progress' })
+  }
 }
 
 export async function completeDailyGoal(id: number): Promise<void> {
@@ -80,8 +94,6 @@ export async function carryGoalForward(
   if (!goal || goal.status === 'completed' || goal.status === 'carried_over' || goal.status === 'cancelled') {
     return null
   }
-  const targetGoal = await getDailyGoalByDate(toDate)
-  if (targetGoal) return targetGoal.id
   return db.transaction('rw', [db.dailyGoals, db.subgoals], async () => {
     await db.dailyGoals.update(goal.id, { status: 'carried_over' })
     const newId = await addEntry(db.dailyGoals, {

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Plus, Target, CheckCircle2, RefreshCw, Pencil, CircleSlash, Flag } from 'lucide-react'
 import { useGoalStore } from './goal.store'
-import { addDays, format } from 'date-fns'
+import { addDays, format, parseISO } from 'date-fns'
 import { validateGoalTitle } from '../../domain/validation'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
@@ -29,6 +29,7 @@ export function GoalPage() {
   const editMission = useGoalStore((state) => state.editMission)
   const createDailyGoal = useGoalStore((state) => state.createDailyGoal)
   const addSubgoal = useGoalStore((state) => state.addSubgoal)
+  const editSubgoal = useGoalStore((state) => state.editSubgoal)
   const toggleSubgoal = useGoalStore((state) => state.toggleSubgoal)
   const completeGoal = useGoalStore((state) => state.completeGoal)
   const carryGoalForward = useGoalStore((state) => state.carryGoalForward)
@@ -55,16 +56,26 @@ export function GoalPage() {
   const [goalTitle, setGoalTitle] = useState('')
   const [goalMissionId, setGoalMissionId] = useState<number | null>(null)
   const [subgoalTitle, setSubgoalTitle] = useState('')
+  const [editingSubgoalId, setEditingSubgoalId] = useState<number | null>(null)
+  const [editingSubgoalTitle, setEditingSubgoalTitle] = useState('')
   const [error, setError] = useState('')
   const [editTitle, setEditTitle] = useState('')
   const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [confirmation, setConfirmation] = useState<{
+    title: string
+    description: string
+    confirmLabel: string
+    onConfirm: () => Promise<void>
+  } | null>(null)
+  const [confirming, setConfirming] = useState(false)
 
-  useEffect(() => {
-    setMissionTarget(selectedDate)
-  }, [selectedDate])
 
-  const todayGoals = dailyGoals.filter((g) => g.date === selectedDate)
-  const todayGoal = todayGoals[0]
+  const todayGoals = dailyGoals.filter(
+    (goal) => goal.date === selectedDate && goal.status !== 'cancelled' && goal.status !== 'carried_over',
+  )
+  const todayGoal = todayGoals.find((goal) => !goal.isCarryOver) ?? todayGoals[0]
+  const carriedGoals = todayGoals.filter((goal) => goal.isCarryOver && goal.id !== todayGoal?.id)
+  const hasMainGoal = todayGoals.some((goal) => !goal.isCarryOver)
   const canUpdateGoal = todayGoal?.status === 'planned' || todayGoal?.status === 'in_progress'
   const todaySubgoals = todayGoal
     ? subgoals.filter((s) => s.dailyGoalId === todayGoal.id)
@@ -151,25 +162,58 @@ export function GoalPage() {
     }
   }
 
+  const handleEditSubgoal = async (event: FormEvent) => {
+    event.preventDefault()
+    if (editingSubgoalId === null) return
+    setError('')
+    try {
+      await editSubgoal(editingSubgoalId, editingSubgoalTitle)
+      setEditingSubgoalId(null)
+      setEditingSubgoalTitle('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update subgoal')
+    }
+  }
+
   const handleCompleteGoal = async () => {
     if (!todayGoal) return
     try {
       await completeGoal(todayGoal.id)
-      await loadToday(todayIso)
+      await loadToday(selectedDate)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to complete goal')
     }
   }
 
+  const handleCompleteCarriedGoal = async (goalId: number) => {
+    try {
+      await completeGoal(goalId)
+      await loadToday(selectedDate)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to complete carried goal')
+    }
+  }
+
   const handleCarryForward = async () => {
     if (!todayGoal) return
-    const tomorrow = format(addDays(new Date(selectedDate), 1), 'yyyy-MM-dd')
+    const tomorrow = format(addDays(parseISO(selectedDate), 1), 'yyyy-MM-dd')
     try {
-      await carryGoalForward(todayIso, tomorrow)
+      await carryGoalForward(selectedDate, tomorrow)
       await loadToday(selectedDate)
       navigate(`/goals?date=${tomorrow}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to carry goal forward')
+    }
+  }
+
+  const handleConfirmAction = async () => {
+    if (!confirmation || confirming) return
+    setConfirming(true)
+    try {
+      await confirmation.onConfirm()
+    } finally {
+      setConfirmation(null)
+      setConfirming(false)
     }
   }
 
@@ -209,12 +253,14 @@ export function GoalPage() {
           </FormField>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={() => { setError(''); setOpenMissionDialog(true) }}>
+          <Button onClick={() => { setError(''); setMissionTarget(selectedDate); setOpenMissionDialog(true) }}>
             <Plus size={16} className="mr-2" /> Monthly mission
           </Button>
-          <Button variant="secondary" onClick={() => { setError(''); setOpenGoalDialog(true) }}>
-            <Plus size={16} className="mr-2" /> Goal for {selectedDateLabel}
-          </Button>
+          {!hasMainGoal && (
+            <Button variant="secondary" onClick={() => { setError(''); setOpenGoalDialog(true) }}>
+              <Plus size={16} className="mr-2" /> Goal for {selectedDateLabel}
+            </Button>
+          )}
         </div>
       </header>
 
@@ -254,7 +300,18 @@ export function GoalPage() {
                   <Pencil size={14} className="mr-1" /> Edit
                 </Button>
                 {mission.status !== 'completed' && (
-                  <Button variant="ghost" onClick={() => void completeMission(mission.id)} aria-label={`Complete mission ${mission.title}`}>
+                  <Button variant="ghost" onClick={() => setConfirmation({
+                    title: 'Complete this monthly mission?',
+                    description: `Completing “${mission.title}” will add it to your history. This status cannot be undone.`,
+                    confirmLabel: 'Complete mission',
+                    onConfirm: async () => {
+                      try {
+                        await completeMission(mission.id)
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : 'Failed to complete mission')
+                      }
+                    },
+                  })} aria-label={`Complete mission ${mission.title}`}>
                     <Flag size={14} className="mr-1" /> Complete
                   </Button>
                 )}
@@ -264,6 +321,37 @@ export function GoalPage() {
           </ul>
         )}
       </Card>
+
+      {carriedGoals.length > 0 && (
+        <Card>
+          <div className="mb-3 flex items-center gap-2">
+            <RefreshCw size={16} className="text-emerald-400" />
+            <h2 className="text-sm font-semibold text-slate-200">Carried over</h2>
+          </div>
+          <ul className="space-y-2">
+            {carriedGoals.map((goal) => (
+              <li key={goal.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-700/60 bg-slate-900/50 p-3">
+                <div>
+                  <p className={`text-sm font-medium ${goal.status === 'completed' ? 'text-emerald-300 line-through' : 'text-white'}`}>
+                    {goal.title}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">{goal.status === 'completed' ? 'Completed' : 'Still in progress'}</p>
+                </div>
+                {(goal.status === 'planned' || goal.status === 'in_progress') && (
+                  <Button variant="secondary" onClick={() => setConfirmation({
+                    title: 'Mark this goal complete?',
+                    description: `Completing “${goal.title}” adds it to your history. This action cannot be undone.`,
+                    confirmLabel: 'Mark complete',
+                    onConfirm: () => handleCompleteCarriedGoal(goal.id),
+                  })}>
+                    Mark complete
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       {/* Today&apos;s goal */}
       <Card>
@@ -290,30 +378,62 @@ export function GoalPage() {
             {todayGoal.isCarryOver && (
               <p className="text-xs text-emerald-300/70">Carried over from a previous day</p>
             )}
-            <div className="space-y-2">
-              {todaySubgoals.length > 0 ? (
-                todaySubgoals.map((subgoal) => (
-                  <button
-                    key={subgoal.id}
-                    type="button"
-                    disabled={!canUpdateGoal}
-                    className="w-full flex items-center justify-between gap-3 rounded-lg border border-slate-700/60 bg-slate-900/50 px-3 py-2 text-left transition-colors hover:border-emerald-500/40"
-                    onClick={() => { if (canUpdateGoal) void toggleSubgoal(subgoal.id) }}
-                  >
-                    <span className={`text-sm ${subgoal.status === 'completed' ? 'text-emerald-400 line-through' : 'text-slate-400'}`}>
-                      {subgoal.title}
-                    </span>
-                    <span className={`flex h-5 w-5 items-center justify-center rounded-full border ${subgoal.status === 'completed' ? 'bg-emerald-500 border-emerald-500' : 'bg-slate-900 border-slate-700'}`}>
-                      {subgoal.status === 'completed' ? (
-                        <CheckCircle2 size={12} className="text-slate-950" />
-                      ) : null}
-                    </span>
-                  </button>
-                ))
-              ) : (
-                <p className="text-sm text-slate-500">No subgoals yet.</p>
-              )}
-            </div>
+            {todaySubgoals.length > 0 ? (
+              <ul className="space-y-2">
+                {todaySubgoals.map((subgoal) => (
+                  <li key={subgoal.id} className="flex items-center gap-2 rounded-lg border border-slate-700/60 bg-slate-900/50 px-3 py-2">
+                    {editingSubgoalId === subgoal.id ? (
+                      <form onSubmit={handleEditSubgoal} className="flex min-w-0 flex-1 items-center gap-2">
+                        <input
+                          autoFocus
+                          type="text"
+                          aria-label={`Edit subgoal ${subgoal.title}`}
+                          value={editingSubgoalTitle}
+                          onChange={(event) => setEditingSubgoalTitle(event.target.value)}
+                          className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950/60 px-2 py-1 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                        <Button type="submit" disabled={!validateGoalTitle(editingSubgoalTitle).ok}>Save</Button>
+                        <Button type="button" variant="ghost" onClick={() => setEditingSubgoalId(null)}>Cancel</Button>
+                      </form>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          disabled={!canUpdateGoal}
+                          aria-label={`${subgoal.status === 'completed' ? 'Reopen' : 'Complete'} subgoal ${subgoal.title}`}
+                          className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left disabled:cursor-default"
+                          onClick={() => { if (canUpdateGoal) void toggleSubgoal(subgoal.id) }}
+                        >
+                          <span className={`text-sm ${subgoal.status === 'completed' ? 'text-emerald-400 line-through' : 'text-slate-400'}`}>
+                            {subgoal.title}
+                          </span>
+                          <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${subgoal.status === 'completed' ? 'bg-emerald-500 border-emerald-500' : 'bg-slate-900 border-slate-700'}`}>
+                            {subgoal.status === 'completed' ? <CheckCircle2 size={12} className="text-slate-950" /> : null}
+                          </span>
+                        </button>
+                        {canUpdateGoal && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="px-2 py-1"
+                            aria-label={`Edit subgoal ${subgoal.title}`}
+                            onClick={() => {
+                              setError('')
+                              setEditingSubgoalId(subgoal.id)
+                              setEditingSubgoalTitle(subgoal.title)
+                            }}
+                          >
+                            <Pencil size={14} />
+                          </Button>
+                        )}
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-slate-500">No subgoals yet.</p>
+            )}
             {canUpdateGoal && (
               <div className="mt-4 flex gap-2">
                 <input
@@ -338,16 +458,40 @@ export function GoalPage() {
               )}
               {canUpdateGoal && (
                 <>
-                  <Button onClick={handleCompleteGoal} variant="secondary">
+                  <Button onClick={() => setConfirmation({
+                    title: 'Mark this goal complete?',
+                    description: `Completing “${todayGoal.title}” adds it to your history. This action cannot be undone.`,
+                    confirmLabel: 'Mark complete',
+                    onConfirm: handleCompleteGoal,
+                  })} variant="secondary">
                     Mark goal complete
                   </Button>
-                  <Button variant="ghost" onClick={() => void cancelGoal(todayGoal.id)}>
+                  <Button variant="ghost" onClick={() => setConfirmation({
+                    title: 'Cancel this goal?',
+                    description: `“${todayGoal.title}” will be kept in your history as cancelled. You can create a new goal for this date, but this goal cannot be restored.`,
+                    confirmLabel: 'Cancel goal',
+                    onConfirm: async () => {
+                      try {
+                        await cancelGoal(todayGoal.id)
+                        await loadToday(selectedDate)
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : 'Failed to cancel goal')
+                      }
+                    },
+                  })}>
                     <CircleSlash size={15} className="mr-2" /> Cancel goal
                   </Button>
                 </>
               )}
               {canUpdateGoal && (
-                <Button variant="ghost" onClick={handleCarryForward}>
+                <Button variant="ghost" onClick={() => {
+                  setConfirmation({
+                    title: 'Carry this goal to tomorrow?',
+                    description: `This creates a copy for ${format(addDays(parseISO(selectedDate), 1), 'EEEE, MMMM d')} and marks today’s goal as carried over. This action cannot be undone.`,
+                    confirmLabel: 'Carry to tomorrow',
+                    onConfirm: handleCarryForward,
+                  })
+                }}>
                   <RefreshCw size={16} className="mr-2" /> Carry to tomorrow
                 </Button>
               )}
@@ -368,6 +512,26 @@ export function GoalPage() {
       </Card>
 
       {/* Dialogs */}
+      <Dialog
+        open={confirmation !== null}
+        onClose={() => { if (!confirming) setConfirmation(null) }}
+        title={confirmation?.title}
+        description={confirmation?.description}
+        size="sm"
+      >
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setConfirmation(null)} disabled={confirming}>Cancel</Button>
+          <Button
+            variant="secondary"
+            onClick={() => void handleConfirmAction()}
+            disabled={confirming}
+            className="border-rose-500/40 text-rose-300 hover:bg-rose-500/10"
+          >
+            {confirming ? 'Saving…' : confirmation?.confirmLabel}
+          </Button>
+        </div>
+      </Dialog>
+
       <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} title="Edit main goal" description="Make the result you want to finish today clear." size="sm">
         <form onSubmit={handleEditGoal} className="space-y-4">
           <FormField label="Title" required>

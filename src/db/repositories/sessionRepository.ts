@@ -1,11 +1,20 @@
 import { addEntry, db } from '../database'
-import { differenceInMinutes, endOfDay, startOfDay } from 'date-fns'
+import { differenceInMinutes, endOfDay, parseISO, startOfDay } from 'date-fns'
 import type { FocusSession } from '../../domain/models'
 
 export async function createFocusSession(
   session: Omit<FocusSession, 'id'>,
 ): Promise<number> {
-  return addEntry(db.focusSessions, session)
+  return db.transaction('rw', [db.focusSessions, db.dailyGoals], async () => {
+    const goal = await db.dailyGoals.get(session.dailyGoalId)
+    if (!goal) throw new Error('Create a daily goal before starting a focus session.')
+    if (goal.status === 'completed' || goal.status === 'cancelled' || goal.status === 'carried_over') {
+      throw new Error('This goal is no longer active. Choose an active goal to start focusing.')
+    }
+
+    await db.dailyGoals.update(goal.id, { status: 'in_progress' })
+    return addEntry(db.focusSessions, session)
+  })
 }
 
 export async function pauseSession(id: number, pausedAt = Date.now()): Promise<void> {
@@ -69,8 +78,8 @@ export async function endSession(id: number, endedAt: number): Promise<void> {
 export async function getSessionsForDay(
   date: string,
 ): Promise<readonly FocusSession[]> {
-  const from = startOfDay(new Date(date)).getTime()
-  const to = endOfDay(new Date(date)).getTime()
+  const from = startOfDay(parseISO(date)).getTime()
+  const to = endOfDay(parseISO(date)).getTime()
   const sessions = await db.focusSessions.where('startedAt').between(from, to).toArray()
   return sessions.slice().sort((a, b) => a.startedAt - b.startedAt)
 }
@@ -79,8 +88,8 @@ export async function getSessionsForRange(
   from: string,
   to: string,
 ): Promise<readonly FocusSession[]> {
-  const fromMs = startOfDay(new Date(from)).getTime()
-  const toMs = endOfDay(new Date(to)).getTime()
+  const fromMs = startOfDay(parseISO(from)).getTime()
+  const toMs = endOfDay(parseISO(to)).getTime()
   const sessions = await db.focusSessions.where('startedAt').between(fromMs, toMs).toArray()
   return sessions.slice().sort((a, b) => a.startedAt - b.startedAt)
 }

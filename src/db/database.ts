@@ -130,6 +130,42 @@ const TABLE_ORDER: readonly string[] = [
   'userSettings',
 ]
 
+const REQUIRED_IMPORT_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  monthlyMissions: ['title', 'description', 'startDate', 'targetDate', 'status', 'createdAt', 'completedAt'],
+  dailyGoals: ['monthlyMissionId', 'title', 'date', 'status', 'isCarryOver', 'completedAt', 'createdAt'],
+  subgoals: ['dailyGoalId', 'title', 'status', 'completedAt', 'order'],
+  focusSessions: ['dailyGoalId', 'subgoalId', 'startedAt', 'plannedEndAt', 'pausedAt', 'totalPausedTime', 'endedAt', 'plannedDuration', 'actualDuration', 'status'],
+  distractions: ['sessionId', 'note', 'occurredAt'],
+  dailyReviews: ['date', 'reflection', 'completedGoal', 'focusMinutes', 'distractionCount'],
+  weeklyReviews: ['date', 'reflection', 'completedGoal', 'focusMinutes', 'distractionCount'],
+  milestones: ['type', 'value', 'title', 'achievedAt'],
+  userSettings: ['focusDuration', 'breakDuration', 'dailyFocusTarget', 'soundEnabled', 'theme'],
+}
+
+export function validateImportData(data: unknown): asserts data is DbExport {
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('Invalid FocusSpan backup')
+  }
+
+  const backup = data as Record<string, unknown>
+  for (const tableName of TABLE_ORDER) {
+    const rows = backup[tableName]
+    const requiredFields = REQUIRED_IMPORT_FIELDS[tableName]
+    if (!Array.isArray(rows)) throw new Error(`Backup is missing ${tableName}`)
+    for (const row of rows) {
+      if (
+        row === null ||
+        typeof row !== 'object' ||
+        Array.isArray(row) ||
+        !Number.isSafeInteger((row as Record<string, unknown>).id) ||
+        requiredFields.some((field) => !Object.prototype.hasOwnProperty.call(row, field))
+      ) {
+        throw new Error(`Backup contains an invalid ${tableName} record`)
+      }
+    }
+  }
+}
+
 export async function exportAllData(): Promise<DbExport> {
   return {
     monthlyMissions: await db.monthlyMissions.toArray(),
@@ -145,8 +181,9 @@ export async function exportAllData(): Promise<DbExport> {
 }
 
 export async function importAllData(
-  data: Record<string, readonly unknown[]>,
+  data: unknown,
 ): Promise<void> {
+  validateImportData(data)
   const tables = [
     db.monthlyMissions,
     db.dailyGoals,

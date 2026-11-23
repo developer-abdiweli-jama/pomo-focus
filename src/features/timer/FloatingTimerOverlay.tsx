@@ -53,7 +53,6 @@ export function FloatingTimerOverlay() {
   useEffect(() => {
     let cancelled = false
     if (sessionId === null) {
-      setGoalTitle('Focus session')
       return
     }
     void getSession(sessionId).then(async (session) => {
@@ -118,7 +117,7 @@ export function FloatingTimerOverlay() {
       </div>
       {confirmFinish ? (
         <div>
-          <div style={{ marginBottom: 8, color: '#cbd5e1', fontSize: 13 }}>Finish this session and save its focus time?</div>
+          <div style={{ marginBottom: 8, color: '#cbd5e1', fontSize: 13 }}>Finish this session and save its focus time? This cannot be undone.</div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button type="button" onClick={() => setConfirmFinish(false)} style={{ flex: 1, border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827', color: '#e2e8f0', cursor: 'pointer' }}>Keep focusing</button>
             <button type="button" onClick={() => void handleFinish()} style={{ flex: 1, border: 0, borderRadius: 10, padding: '10px 12px', background: '#f43f5e', color: '#fff1f2', fontWeight: 700, cursor: 'pointer' }}>Finish session</button>

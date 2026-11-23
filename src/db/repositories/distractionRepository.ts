@@ -1,5 +1,5 @@
 import { addEntry, db } from '../database'
-import { endOfDay, startOfDay } from 'date-fns'
+import { endOfDay, parseISO, startOfDay } from 'date-fns'
 import type { Distraction } from '../../domain/models'
 
 export async function saveDistraction(
@@ -21,8 +21,8 @@ export async function getDistractionsForSession(
 export async function getDistractionsForDay(
   date: string,
 ): Promise<readonly Distraction[]> {
-  const from = startOfDay(new Date(date)).getTime()
-  const to = endOfDay(new Date(date)).getTime()
+  const from = startOfDay(parseISO(date)).getTime()
+  const to = endOfDay(parseISO(date)).getTime()
   return db.distractions.where('occurredAt').between(from, to).toArray()
 }
 
@@ -30,8 +30,8 @@ export async function getDistractionsForRange(
   fromDate: string,
   toDate: string,
 ): Promise<readonly Distraction[]> {
-  const from = startOfDay(new Date(fromDate)).getTime()
-  const to = endOfDay(new Date(toDate)).getTime()
+  const from = startOfDay(parseISO(fromDate)).getTime()
+  const to = endOfDay(parseISO(toDate)).getTime()
   return db.distractions.where('occurredAt').between(from, to, true, true).toArray()
 }
 
@@ -39,7 +39,7 @@ export async function countDistractionsForRange(
   from: string,
   to: string,
 ): Promise<number> {
-  const fromMs = startOfDay(new Date(from)).getTime()
-  const toMs = endOfDay(new Date(to)).getTime()
+  const fromMs = startOfDay(parseISO(from)).getTime()
+  const toMs = endOfDay(parseISO(to)).getTime()
   return db.distractions.where('occurredAt').between(fromMs, toMs).count()
 }

@@ -1,7 +1,4 @@
-import { startOfDay } from 'date-fns'
-
-// One day in milliseconds.
-const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000
+import { differenceInCalendarDays, format, parseISO, subDays } from 'date-fns'
 
 export interface StreakResult {
   readonly current: number
@@ -11,17 +8,12 @@ export interface StreakResult {
 export function calculateStreak(
   qualifiedDates: readonly string[],
 ): StreakResult {
-  const stamps = new Set(
-    Array.from(new Set(qualifiedDates)).map(
-      (date) => startOfDay(new Date(date)).getTime(),
-    ),
-  )
-
   let longest = 0
   let run = 0
-  let previous: number | null = null
-  for (const stamp of [...stamps].sort((a, b) => a - b)) {
-    if (previous === null || stamp === previous + MILLISECONDS_PER_DAY) {
+  let previous: string | null = null
+  const dates = [...new Set(qualifiedDates)].sort()
+  for (const date of dates) {
+    if (previous === null || differenceInCalendarDays(parseISO(date), parseISO(previous)) === 1) {
       run += 1
     } else {
       run = 1
@@ -29,14 +21,15 @@ export function calculateStreak(
     if (run > longest) {
       longest = run
     }
-    previous = stamp
+    previous = date
   }
 
   let current = 0
-  let stamp = startOfDay(new Date()).getTime()
-  while (stamps.has(stamp)) {
+  let date = format(new Date(), 'yyyy-MM-dd')
+  const qualified = new Set(dates)
+  while (qualified.has(date)) {
     current += 1
-    stamp -= MILLISECONDS_PER_DAY
+    date = format(subDays(parseISO(date), 1), 'yyyy-MM-dd')
   }
 
   return { current, longest }
