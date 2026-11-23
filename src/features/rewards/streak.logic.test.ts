@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import { format, subDays } from 'date-fns'
 import { calculateStreak } from './streak.logic'
 
@@ -55,5 +55,14 @@ describe('calculateStreak', () => {
       current: 3,
       longest: 3,
     })
+  })
+
+  test('consecutive local dates remain consecutive across daylight saving time', () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles')
+    try {
+      expect(calculateStreak(['2026-03-09', '2026-03-10', '2026-03-11']).longest).toBe(3)
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 })

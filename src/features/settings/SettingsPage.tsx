@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Save, Download, Upload, Trash2, AlertCircle, RefreshCw } from 'lucide-react'
 import { useRewardStore } from '../rewards/reward.store'
 import { getSettings, saveSettings, DEFAULT_USER_SETTINGS } from '../../db/repositories/settingsRepository'
-import { db, exportAllData, importAllData } from '../../db/database'
+import { db, exportAllData, importAllData, validateImportData } from '../../db/database'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import { Dialog } from '../../components/ui/Dialog'
@@ -29,6 +29,9 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [openClear, setOpenClear] = useState(false)
   const [openImport, setOpenImport] = useState(false)
+  const [openReset, setOpenReset] = useState(false)
+  const [pendingImport, setPendingImport] = useState<unknown>(null)
+  const [importing, setImporting] = useState(false)
   const [importError, setImportError] = useState('')
   const [clearError, setClearError] = useState('')
   const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)
@@ -96,19 +99,33 @@ export function SettingsPage() {
 
   const handleImportFile = (file: File) => {
     const reader = new FileReader()
-    reader.onload = async (event) => {
+    reader.onload = (event) => {
       try {
         const data = JSON.parse((event.target?.result as string) ?? '{}')
-        await importAllData(data)
-        await refreshMetrics()
-        setOpenImport(false)
+        validateImportData(data)
+        setPendingImport(data)
         setImportError('')
-        setMessage({ kind: 'info', text: 'Data imported.' })
       } catch {
         setImportError('Import failed. Choose a valid FocusSpan JSON backup.')
       }
     }
     reader.readAsText(file)
+  }
+
+  const handleConfirmImport = async () => {
+    if (!pendingImport || importing) return
+    setImporting(true)
+    try {
+      await importAllData(pendingImport)
+      await refreshMetrics()
+      setOpenImport(false)
+      setPendingImport(null)
+      setMessage({ kind: 'info', text: 'Data imported.' })
+    } catch {
+      setImportError('Import failed. Your current data was not replaced.')
+    } finally {
+      setImporting(false)
+    }
   }
 
   const handleClearAll = async () => {
@@ -146,6 +163,7 @@ export function SettingsPage() {
         await db.weeklyReviews.clear()
       })
       await refreshMetrics()
+      setOpenReset(false)
       setMessage({ kind: 'info', text: 'Streaks and reviews reset.' })
     } catch {
       setMessage({ kind: 'error', text: 'Reset failed.' })
@@ -296,7 +314,7 @@ export function SettingsPage() {
           </Button>
           <Button
             variant="ghost"
-            onClick={handleResetStreaks}
+            onClick={() => setOpenReset(true)}
             className="w-full justify-start text-rose-400 hover:text-rose-300"
           >
             <RefreshCw size={16} className="mr-2" /> Reset streaks &amp; reviews
@@ -313,27 +331,56 @@ export function SettingsPage() {
 
       <Dialog
         open={openImport}
-        onClose={() => setOpenImport(false)}
-        title="Import data"
-        description="Choose a previously exported JSON file. Importing replaces the data currently stored on this device."
+        onClose={() => { if (!importing) { setOpenImport(false); setPendingImport(null) } }}
+        title={pendingImport !== null ? 'Replace current data?' : 'Import data'}
+        description={pendingImport !== null
+          ? 'Importing this backup replaces all FocusSpan data on this device. This action cannot be undone. Export a backup first if you may need the current data.'
+          : 'Choose a previously exported FocusSpan JSON backup. You will review the replacement before it is imported.'}
         size="md"
       >
-        <input
-          type="file"
-          accept=".json"
-          onChange={(e) => {
-            const file = e.target.files?.[0]
-            if (file) {
-              setImportError('')
-              handleImportFile(file)
-            }
-          }}
-          className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border file:border-slate-700 file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 cursor-pointer"
-        />
+        {pendingImport === null && (
+          <input
+            type="file"
+            accept=".json,application/json"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) {
+                setImportError('')
+                handleImportFile(file)
+              }
+            }}
+            className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border file:border-slate-700 file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 cursor-pointer"
+          />
+        )}
         {importError && <p className="text-sm text-rose-300" role="alert">{importError}</p>}
-        <div className="mt-4 flex justify-end">
-          <Button variant="ghost" onClick={() => setOpenImport(false)}>
+        <div className="mt-4 flex justify-end gap-2">
+          {pendingImport !== null && (
+            <Button variant="ghost" onClick={() => setPendingImport(null)} disabled={importing}>
+              Choose another file
+            </Button>
+          )}
+          <Button variant="ghost" onClick={() => { setOpenImport(false); setPendingImport(null) }} disabled={importing}>
             Cancel
+          </Button>
+          {pendingImport !== null && (
+            <Button onClick={() => void handleConfirmImport()} disabled={importing} className="bg-rose-600 hover:bg-rose-500">
+              {importing ? 'Importing…' : 'Replace data and import'}
+            </Button>
+          )}
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={openReset}
+        onClose={() => setOpenReset(false)}
+        title="Reset streaks and reviews?"
+        description="This permanently removes your streak milestones and all daily and weekly review entries. This action cannot be undone."
+        size="sm"
+      >
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setOpenReset(false)}>Cancel</Button>
+          <Button variant="ghost" className="text-rose-400 hover:bg-rose-500/10" onClick={() => void handleResetStreaks()}>
+            Reset streaks &amp; reviews
           </Button>
         </div>
       </Dialog>

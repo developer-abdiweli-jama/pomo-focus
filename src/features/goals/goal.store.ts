@@ -32,6 +32,7 @@ export interface GoalStore {
     readonly date: string
   }) => Promise<number>
   addSubgoal: (input: { readonly dailyGoalId: number; readonly title: string }) => Promise<number>
+  editSubgoal: (id: number, title: string) => Promise<void>
   toggleSubgoal: (id: number) => Promise<void>
   completeGoal: (id: number) => Promise<void>
   editDailyGoal: (id: number, title: string) => Promise<void>
@@ -65,7 +66,10 @@ export const useGoalStore = create<GoalStore>((set, get) => ({
 
   loadToday: async (date = format(new Date(), 'yyyy-MM-dd')) => {
     const goals = await goalRepository.getDailyGoals(date)
-    const selected = goals.find((goal) => goal.status !== 'cancelled') ?? null
+    const activeGoals = goals.filter(
+      (goal) => goal.status !== 'cancelled' && goal.status !== 'carried_over',
+    )
+    const selected = activeGoals.find((goal) => !goal.isCarryOver) ?? activeGoals[0] ?? null
     set({ dailyGoals: goals, selectedDailyGoal: selected, subgoals: [] })
     if (selected) {
       const subgoals = await goalRepository.getSubgoals(selected.id)
@@ -113,9 +117,6 @@ export const useGoalStore = create<GoalStore>((set, get) => ({
     if (!validation.ok) {
       throw new Error(validation.reason ?? 'Invalid goal title')
     }
-    if (await goalRepository.getDailyGoalByDate(input.date)) {
-      throw new Error('This day already has a main goal. Edit or carry it forward instead.')
-    }
     const id = await goalRepository.createDailyGoal({
       monthlyMissionId: input.monthlyMissionId,
       title: input.title,
@@ -154,6 +155,18 @@ export const useGoalStore = create<GoalStore>((set, get) => ({
       ],
     })
     return id
+  },
+
+  editSubgoal: async (id, title) => {
+    const validation = validateGoalTitle(title)
+    if (!validation.ok) throw new Error(validation.reason ?? 'Invalid subgoal title')
+    const updatedTitle = title.trim()
+    await goalRepository.updateSubgoal(id, { title: updatedTitle })
+    set({
+      subgoals: get().subgoals.map((subgoal) =>
+        subgoal.id === id ? { ...subgoal, title: updatedTitle } : subgoal,
+      ),
+    })
   },
 
   toggleSubgoal: async (id) => {
